@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+.bg-primary {
+  background: var(--primary);
+  color: white;
+}
