@@ -3,8 +3,8 @@ import axios from "axios";
 import { UserPlus, Trash2, Edit, Search } from "lucide-react";
 
 // Changed API endpoints
-const USERS_API = "http://172.20.10.4:5000/api/users";
-const REGISTER_API = "http://172.20.10.4:5000/api/auth/register";
+const USERS_API = "http://172.20.10.4:8000/api/users";
+const REGISTER_API = "http://172.20.10.4:8000/api/auth/register";
 
 export default function VetDoctors() {
   const [vets, setVets] = useState([]);
@@ -101,7 +101,7 @@ export default function VetDoctors() {
   const handleAdd = () => {
     setIsAddMode(true);
     setEditingVet({
-      username: "",
+      username: "Dr.",
       password: "",
       name: "Dr. ",
       email: "",
