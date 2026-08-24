@@ -51,7 +51,7 @@ export default function LoginScreen({ navigation }) {
 
       // ✅ API CALL (FIXED)
       const res = await fetch(
-        "http://172.20.10.4:5000/api/auth/login",
+        "http://172.20.10.4:8000/api/auth/login",
         {
           method: "POST",
           headers: {
@@ -256,6 +256,7 @@ const styles = StyleSheet.create({
 
   input: {
     padding: 12,
+    color: "#333",
   },
 
   buttonContainer: {

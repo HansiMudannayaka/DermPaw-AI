@@ -2,6 +2,7 @@ import React, {
   useMemo,
   useState,
   useCallback,
+  useEffect,
 } from "react";
 
 import {
@@ -24,10 +25,9 @@ import {
 } from "@expo/vector-icons";
 
 import { LinearGradient } from "expo-linear-gradient";
-
 import { SafeAreaView } from "react-native-safe-area-context";
-
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /* ================= COLORS ================= */
 
@@ -38,69 +38,16 @@ const CARD = "#FFFFFF";
 
 /* ================= DATA ================= */
 
-const reports = [
-  {
-    id: "1",
-    date: "Today",
-    time: "10:45 AM",
-    disease: "Skin Allergy",
-    status: "warning",
-    confidence: 87,
-    image:
-      "https://images.unsplash.com/photo-1583337130417-3346a1be7dee",
-  },
-
-  {
-    id: "2",
-    date: "Today",
-    time: "08:10 AM",
-    disease: "Healthy Skin",
-    status: "healthy",
-    confidence: 92,
-    image:
-      "https://images.unsplash.com/photo-1574158622682-e40e69881006",
-  },
-
-  {
-    id: "3",
-    date: "Yesterday",
-    time: "06:30 PM",
-    disease: "Fungal Infection",
-    status: "danger",
-    confidence: 78,
-    image:
-      "https://images.unsplash.com/photo-1601758125946-6ec2ef64daf8",
-  },
-
-  {
-    id: "4",
-    date: "Yesterday",
-    time: "02:15 PM",
-    disease: "Mild Rash",
-    status: "warning",
-    confidence: 81,
-    image:
-      "https://images.unsplash.com/photo-1558944351-c1f3e0f9c2a6",
-  },
-];
-
 export default function DailyReportsScreen({
   navigation,
 }) {
-  const [search, setSearch] =
-    useState("");
+  const [reports, setReports] = useState([]);
+  const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [filterVisible, setFilterVisible] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState("all");
 
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [filterVisible, setFilterVisible] =
-    useState(false);
-
-  const [selectedFilter, setSelectedFilter] =
-    useState("all");
-
-  const tabBarHeight =
-    useBottomTabBarHeight();
+  const tabBarHeight = useBottomTabBarHeight();
 
   /* ================= COLORS ================= */
 
@@ -113,6 +60,47 @@ export default function DailyReportsScreen({
 
     return "#EF4444";
   };
+
+  // Fetch reports from backend
+  const fetchReports = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const res = await fetch("http://172.20.10.4:8000/api/scans", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        const list = (data.scans || []).map(item => {
+          const d = new Date(item.createdAt);
+          return {
+            id: item._id,
+            date: d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+            time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+            disease: item.disease,
+            status: item.status || "warning",
+            confidence: item.confidence || 0,
+            image: item.image || "https://images.unsplash.com/photo-1583337130417-3346a1be7dee",
+            original: item
+          };
+        });
+        setReports(list);
+      }
+    } catch (err) {
+      console.log("Error loading scans:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchReports();
+    setRefreshing(false);
+  }, []);
 
   /* ================= FILTERED REPORTS ================= */
 
@@ -137,7 +125,7 @@ export default function DailyReportsScreen({
     }
 
     return filtered;
-  }, [search, selectedFilter]);
+  }, [search, selectedFilter, reports]);
 
   /* ================= GROUPED ================= */
 
@@ -173,17 +161,7 @@ export default function DailyReportsScreen({
         (r) => r.status === "danger"
       ).length,
     };
-  }, []);
-
-  /* ================= REFRESH ================= */
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
-  }, []);
+  }, [reports]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -372,9 +350,18 @@ export default function DailyReportsScreen({
                   style={styles.card}
                   onPress={() =>
                     navigation?.navigate?.(
-                      "ReportDetails",
+                      "Results",
                       {
-                        report,
+                        photo: report.image,
+                        result: {
+                          status: "predicted",
+                          disease: report.disease,
+                          confidence: report.confidence,
+                          disease_info: {
+                            severity: report.status === 'danger' ? 'High' : 'Moderate',
+                            full_name: report.disease
+                          }
+                        }
                       }
                     )
                   }

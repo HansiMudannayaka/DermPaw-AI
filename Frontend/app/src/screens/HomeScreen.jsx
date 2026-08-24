@@ -7,6 +7,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  Alert,
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,6 +18,25 @@ const { width } = Dimensions.get("window");
 
 export default function HomeScreen({ navigation }) {
   const [userName, setUserName] = useState("User");
+  const [pets, setPets] = useState([]);
+  const [scanModalVisible, setScanModalVisible] = useState(false);
+
+  const handleStartScan = () => {
+    if (pets.length === 0) {
+      Alert.alert(
+        "Pet Profile Required",
+        "You need to create a pet profile first before scanning.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Create Profile", onPress: () => navigation.navigate("ManagePets") }
+        ]
+      );
+    } else if (pets.length === 1) {
+      navigation.navigate("GuideCamera", { petId: pets[0]._id, petName: pets[0].name });
+    } else {
+      setScanModalVisible(true);
+    }
+  };
 
   /* =========================
      LOAD USER FROM STORAGE
@@ -29,6 +50,8 @@ export default function HomeScreen({ navigation }) {
           const user = JSON.parse(userData);
           if (user?.name) {
             setUserName(user.name);
+          } else if (user?.username) {
+            setUserName(user.username);
           }
         }
       } catch (error) {
@@ -38,6 +61,35 @@ export default function HomeScreen({ navigation }) {
 
     loadUser();
   }, []);
+
+  /* =========================
+     LOAD ALL PETS FROM BACKEND
+  ========================= */
+  const fetchPets = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const res = await fetch("http://172.20.10.4:8000/api/pets", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPets(data.pets || []);
+      } else {
+        setPets([]);
+      }
+    } catch (error) {
+      console.log("Error fetching pets for HomeScreen:", error);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      fetchPets();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   // ✅ Quick Actions with navigation
   const actions = [
@@ -60,7 +112,10 @@ export default function HomeScreen({ navigation }) {
           </Text>
         </View>
 
-        <TouchableOpacity style={styles.profileBtn}>
+        <TouchableOpacity 
+          style={styles.profileBtn}
+          onPress={() => navigation.navigate("OwnerProfile")}
+        >
           <Ionicons name="paw" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -77,7 +132,7 @@ export default function HomeScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.scanBtn}
-          onPress={() => navigation.navigate("Scan")}
+          onPress={handleStartScan}
         >
           <Text style={styles.scanText}>Start Scan</Text>
           <Ionicons name="scan" size={18} color="#4B0082" />
@@ -93,7 +148,13 @@ export default function HomeScreen({ navigation }) {
             key={i}
             activeOpacity={0.8}
             style={styles.card}
-            onPress={() => navigation.navigate(item.screen)}
+            onPress={() => {
+              if (item.screen === "Scan" || item.screen === "GuideCamera") {
+                handleStartScan();
+              } else {
+                navigation.navigate(item.screen);
+              }
+            }}
           >
             <View style={styles.iconCircle}>
               <Ionicons name={item.icon} size={22} color="#8A2BE2" />
@@ -104,23 +165,101 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* ================= PET CARD ================= */}
-      <Text style={styles.sectionTitle}>Your Pet</Text>
-
-      <View style={styles.petCard}>
-        <Image
-          source={require("../../../assets/images/dob1.png")}
-          style={styles.petImage}
-        />
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.petName}>Buddy</Text>
-          <Text style={styles.petInfo}>
-            Golden Retriever • 2 Years
-          </Text>
-        </View>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 30, marginBottom: 12 }}>
+        <Text style={{ fontSize: 16, fontWeight: "700", color: "#222" }}>Your Pets</Text>
+        {pets.length > 0 && (
+          <TouchableOpacity onPress={() => navigation.navigate("ManagePets")}>
+            <Text style={{ color: "#8A2BE2", fontWeight: "600", fontSize: 13 }}>Manage ›</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
+      {pets.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 5 }}>
+          {pets.map((pet, idx) => (
+            <TouchableOpacity
+              key={pet._id || idx}
+              style={[styles.petCard, { marginRight: 15, minWidth: 240 }]}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate("PetProfile")}
+            >
+              <Image
+                source={pet.image ? { uri: pet.image } : require("../../../assets/images/dog1.png")}
+                style={styles.petImage}
+              />
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.petName}>{pet.name}</Text>
+                <Text style={styles.petInfo}>
+                  {pet.color || "Black"} • {pet.age || "2 Years"} • {pet.gender || "Male"}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#888" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : (
+        <TouchableOpacity
+          style={[styles.petCard, { justifyContent: "center", paddingVertical: 20 }]}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate("PetProfile")}
+        >
+          <Ionicons name="add-circle-outline" size={24} color="#8A2BE2" style={{ marginRight: 10 }} />
+          <Text style={[styles.petName, { color: "#8A2BE2", fontSize: 15 }]}>Add your pet profile</Text>
+        </TouchableOpacity>
+      )}
+
       <View style={{ height: 40 }} />
+
+      {/* PET SELECTION MODAL FOR SCAN */}
+      <Modal visible={scanModalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Pet to Scan</Text>
+              <TouchableOpacity onPress={() => setScanModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#4B0082" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>Which pet are you scanning today?</Text>
+            
+            <ScrollView style={{ maxHeight: 250 }} showsVerticalScrollIndicator={false}>
+              {pets.map((pet) => (
+                <TouchableOpacity
+                  key={pet._id}
+                  style={styles.selectPetRow}
+                  onPress={() => {
+                    setScanModalVisible(false);
+                    navigation.navigate("GuideCamera", { petId: pet._id, petName: pet.name });
+                  }}
+                >
+                  <Image
+                    source={pet.image ? { uri: pet.image } : require("../../../assets/images/dog1.png")}
+                    style={styles.selectPetImg}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.selectPetName}>{pet.name}</Text>
+                    <Text style={styles.selectPetInfo}>{pet.color || "Black"} • {pet.age || "2Y"}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#8A2BE2" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* CREATE NEW PROFILE BUTTON */}
+            <TouchableOpacity
+              style={styles.createProfileBtn}
+              onPress={() => {
+                setScanModalVisible(false);
+                navigation.navigate("ManagePets");
+              }}
+            >
+              <Ionicons name="add-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.createProfileBtnText}>Create New Pet Profile</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -263,5 +402,71 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#888",
     marginTop: 5,
+  },
+
+  /* MODAL */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#4B0082",
+  },
+  modalSub: {
+    color: "#777",
+    marginTop: 5,
+    marginBottom: 15,
+  },
+  selectPetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F0FA",
+    padding: 12,
+    borderRadius: 15,
+    marginBottom: 10,
+  },
+  selectPetImg: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
+  selectPetName: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#111",
+  },
+  selectPetInfo: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
+  },
+
+  createProfileBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4B0082",
+    borderRadius: 15,
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  createProfileBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

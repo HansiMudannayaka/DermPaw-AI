@@ -17,19 +17,6 @@ const BG = "#F6F1FF";
 const LIGHT_PURPLE = "#EBDDFF";
 const CARD = "#FFFFFF";
 
-/* ================= DUMMY ASSIGNED VET ================= */
-
-const doctor = {
-  doctorName: "Dr. Anjali Perera",
-  clinic: "PetCare Veterinary Clinic",
-  experience: "8 Years Experience",
-  specialization: "Dermatology Specialist",
-  phone: "+94 77 123 4567",
-  location: "Negombo, Sri Lanka",
-  image:
-    "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
-};
-
 const getSeverityStyle = (level) => {
   switch (level) {
     case "Severe":
@@ -42,36 +29,61 @@ const getSeverityStyle = (level) => {
 };
 
 export default function OwnerSummaryScreen({ route, navigation }) {
-  const {
-    petName = "Luna",
-    petImage = require("../../../assets/images/dog1.png"),
-    breed = "Golden Retriever",
-    age = "2Y",
-    gender = "Female",
-    disease = "Hot Spot (Acute Moist Dermatitis)",
-    severity = "Severe",
-    notes =
-      "Large area of inflammation with moist lesions. Immediate treatment is recommended.",
-    recommendation = [
-      {
-        title: "Apply Medicated Spray",
-        subtitle: "Twice daily for 7 days",
-        icon: "medical-bag",
-      },
-      {
-        title: "Prevent Scratching",
-        subtitle: "Use protective collar if needed",
-        icon: "shield-check",
-      },
-      {
-        title: "Visit Veterinary Clinic",
-        subtitle: "Within 24 hours",
-        icon: "calendar-clock",
-      },
-    ],
-  } = route.params || {};
+  const { consultation } = route.params || {};
+
+  // Extract from real consultation document
+  const petName = consultation?.petName || route.params?.petName || "Luna";
+  
+  let petImage = route.params?.petImage || require("../../../assets/images/dog1.png");
+  if (consultation?.petImage && consultation.petImage.startsWith("http")) {
+    petImage = { uri: consultation.petImage };
+  }
+
+  const breed = "Golden Retriever"; // fallback
+  const age = "2Y"; // fallback
+  const gender = "Female"; // fallback
+
+  const disease = consultation?.aiResult?.disease || route.params?.disease || "Skin Scan";
+  const conf = consultation?.aiResult?.confidence || 50;
+  const severity = route.params?.severity || (conf > 85 ? "Severe" : conf > 70 ? "Moderate" : "Mild");
+
+  // Parse notes/advice
+  const adviceText = consultation?.advice || "";
+  let notes = consultation?.advice || route.params?.notes || "No clinical notes provided yet.";
+  
+  let parsedNotes = notes;
+  let parsedRecs = [
+    { title: "Follow Veterinarian Advice", subtitle: "As written in notes below", icon: "medical-bag" }
+  ];
+
+  if (adviceText.includes("Notes: ")) {
+    const parts = adviceText.split("Notes: ");
+    parsedNotes = parts[1] || adviceText;
+  }
+  if (adviceText.includes("Recommendations: ")) {
+    const recStr = adviceText.split("Recommendations: ")[1]?.split("\nNotes:")[0];
+    if (recStr) {
+      parsedRecs = recStr.split("\n").map(r => ({
+        title: r.trim(),
+        subtitle: "Prescribed advice",
+        icon: "check-bold"
+      })).filter(r => r.title.length > 0);
+    }
+  }
+
+  const doctor = {
+    doctorName: consultation?.doctor?.name || route.params?.doctor || "Dr. Anjali Perera",
+    clinic: consultation?.doctor?.specialization || "Negombo Veterinary Clinic",
+    experience: consultation?.doctor?.experience || "8 Years Experience",
+    specialization: consultation?.doctor?.specialization || "Dermatology Specialist",
+    phone: consultation?.doctor?.email || "+94 77 123 4567",
+    location: "Colombo, Sri Lanka",
+    image: consultation?.doctor?.image || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
+  };
 
   const severityStyle = getSeverityStyle(severity);
+  const recommendation = route.params?.recommendation ? 
+    [{ title: route.params.recommendation, subtitle: "Treatment plan", icon: "medical-bag" }] : parsedRecs;
 
   return (
     <ScrollView
@@ -228,7 +240,7 @@ export default function OwnerSummaryScreen({ route, navigation }) {
         <Text style={styles.sectionTitle}>Clinical Notes</Text>
 
         <View style={styles.noteBox}>
-          <Text style={styles.noteText}>{notes}</Text>
+          <Text style={styles.noteText}>{parsedNotes}</Text>
         </View>
       </View>
 

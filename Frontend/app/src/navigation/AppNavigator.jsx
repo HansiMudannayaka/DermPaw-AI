@@ -26,6 +26,7 @@ import ArticleDetailsScreen from "../screens/ArticleDetailsScreen";
 
 /* PROFILE */
 import OwnerProfileScreen from "../screens/OwnerProfileScreen";
+import ManagePetsScreen from "../screens/ManagePetsScreen";
 
 /* 🐶 DOCTOR FLOW */
 import DoctorPetDetailsScreen from "../screens/DoctorPetDetailsScreen";
@@ -93,6 +94,10 @@ export default function AppNavigator() {
       <Stack.Screen
         name="OwnerProfile"
         component={OwnerProfileScreen}
+      />
+      <Stack.Screen
+        name="ManagePets"
+        component={ManagePetsScreen}
       />
 
       {/* 🐶 DOCTOR FLOW */}

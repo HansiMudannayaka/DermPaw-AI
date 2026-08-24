@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { height, width } = Dimensions.get("window");
 
@@ -41,74 +42,34 @@ const STATUS_CONFIG = {
   "On Leave": { color: COLORS.WARNING, icon: "calendar" },
 };
 
-// Sample doctors data with more details
-const doctors = [
-  {
-    id: "1",
-    name: "Dr. Sarah Williams",
-    specialty: "Dermatology",
-    rating: 4.8,
-    reviewCount: 127,
-    experience: "8 yrs",
-    image: "https://i.pravatar.cc/150?img=32",
-    status: "Available",
-    education: "Harvard Veterinary School",
-    languages: ["English", "Spanish"],
-  },
-  {
-    id: "2",
-    name: "Dr. John Silva",
-    specialty: "General Vet",
-    rating: 4.6,
-    reviewCount: 89,
-    experience: "6 yrs",
-    image: "https://i.pravatar.cc/150?img=12",
-    status: "Busy",
-    education: "Cornell University",
-    languages: ["English"],
-  },
-  {
-    id: "3",
-    name: "Dr. Anjali Perera",
-    specialty: "Skin & Allergy",
-    rating: 4.9,
-    reviewCount: 203,
-    experience: "10 yrs",
-    image: "https://i.pravatar.cc/150?img=47",
-    status: "Available",
-    education: "UC Davis Veterinary School",
-    languages: ["English", "Hindi"],
-  },
-];
-
 const DoctorCard = React.memo(({ doctor, onPress }) => (
   <TouchableOpacity style={styles.card} onPress={() => onPress(doctor)} activeOpacity={0.7}>
-    <Image source={{ uri: doctor.image }} style={styles.image} />
+    <Image source={{ uri: doctor.image || "https://i.pravatar.cc/150?img=32" }} style={styles.image} />
     
     <View style={styles.info}>
       <Text style={styles.name} numberOfLines={1}>
-        {doctor.name}
+        {doctor.name || doctor.username}
       </Text>
-      <Text style={styles.specialty}>{doctor.specialty}</Text>
+      <Text style={styles.specialty}>{doctor.specialization || doctor.specialty || "Veterinarian"}</Text>
       <View style={styles.metaContainer}>
         <View style={styles.ratingContainer}>
           <Ionicons name="star" size={12} color="#FBBF24" />
-          <Text style={styles.meta}>{doctor.rating}</Text>
+          <Text style={styles.meta}>{doctor.rating || "5.0"}</Text>
         </View>
         <Text style={styles.meta}>•</Text>
-        <Text style={styles.meta}>{doctor.experience}</Text>
+        <Text style={styles.meta}>{doctor.experience || "5 yrs"}</Text>
       </View>
     </View>
 
     <View style={styles.right}>
-      <View style={[styles.statusBadge, { backgroundColor: STATUS_CONFIG[doctor.status]?.color + '20' }]}>
+      <View style={[styles.statusBadge, { backgroundColor: STATUS_CONFIG[doctor.status || "Available"]?.color + '20' }]}>
         <Ionicons 
-          name={STATUS_CONFIG[doctor.status]?.icon || "person"} 
+          name={STATUS_CONFIG[doctor.status || "Available"]?.icon || "checkmark-circle"} 
           size={10} 
-          color={STATUS_CONFIG[doctor.status]?.color} 
+          color={STATUS_CONFIG[doctor.status || "Available"]?.color} 
         />
-        <Text style={[styles.statusText, { color: STATUS_CONFIG[doctor.status]?.color }]}>
-          {doctor.status}
+        <Text style={[styles.statusText, { color: STATUS_CONFIG[doctor.status || "Available"]?.color }]}>
+          {doctor.status || "Available"}
         </Text>
       </View>
     </View>
@@ -118,6 +79,7 @@ const DoctorCard = React.memo(({ doctor, onPress }) => (
 export default function SelectDoctorScreen({ navigation, route }) {
   const { photo, result } = route.params || {};
 
+  const [doctors, setDoctors] = useState([]);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
@@ -125,16 +87,31 @@ export default function SelectDoctorScreen({ navigation, route }) {
 
   const slideAnim = useRef(new Animated.Value(height)).current;
 
+  // Fetch doctors from backend
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      try {
+        const res = await fetch("http://172.20.10.4:8000/api/users");
+        const data = await res.json();
+        const docs = data.filter((u) => u.role === "doctor" || !u.role);
+        setDoctors(docs);
+      } catch (err) {
+        console.log("Error fetching doctors:", err);
+      }
+    };
+    fetchDoctors();
+  }, []);
+
   // Filter doctors based on search
   const filteredDoctors = useMemo(() => {
     if (!search.trim()) return doctors;
     
     return doctors.filter((doc) =>
-      `${doc.name} ${doc.specialty} ${doc.education}`
+      `${doc.name || doc.username} ${doc.specialization || doc.specialty || ""} ${doc.education || ""}`
         .toLowerCase()
         .includes(search.toLowerCase())
     );
-  }, [search]);
+  }, [search, doctors]);
 
   const openDoctor = useCallback((doctor) => {
     setSelectedDoctor(doctor);
@@ -157,31 +134,55 @@ export default function SelectDoctorScreen({ navigation, route }) {
 
   const sendRequest = useCallback(async () => {
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    Alert.alert(
-      "Request Sent",
-      `Your consultation request has been sent to ${selectedDoctor.name}. You'll receive a response shortly.`,
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            closeSheet();
-            navigation.navigate("DoctorRequestSent", {
-              doctor: selectedDoctor,
-              petImage: photo,
-              aiResult: result,
-              status: "pending",
-              timestamp: new Date().toISOString(),
-            });
-          },
+    try {
+      const token = await AsyncStorage.getItem("token");
+      
+      const payload = {
+        doctorId: selectedDoctor._id,
+        petName: "My Dog",
+        petImage: photo || "",
+        aiResult: result || {}
+      };
+
+      const res = await fetch("http://172.20.10.4:8000/api/consultations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
         },
-      ]
-    );
-    
-    setIsLoading(false);
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert(
+          "Request Sent",
+          `Your consultation request has been sent to ${selectedDoctor.name || selectedDoctor.username}. You'll receive a response shortly.`,
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                closeSheet();
+                navigation.navigate("DoctorRequestSent", {
+                  doctor: selectedDoctor,
+                  petImage: photo,
+                  aiResult: result,
+                  status: "pending",
+                  timestamp: new Date().toISOString(),
+                });
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert("Error", data.message || "Failed to submit request");
+      }
+    } catch (err) {
+      console.log("Error submitting request:", err);
+      Alert.alert("Error", "Server not reachable");
+    } finally {
+      setIsLoading(false);
+    }
   }, [selectedDoctor, photo, result, navigation, closeSheet]);
 
   const renderEmptyState = useCallback(() => (

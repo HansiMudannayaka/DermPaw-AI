@@ -23,14 +23,64 @@ const CARD = "#FFFFFF";
 
 export default function OwnerProfileScreen({ navigation }) {
   const [isEditing, setIsEditing] = useState(false);
+  const [petCount, setPetCount] = useState(0);
+  const [reportCount, setReportCount] = useState(0);
+  const [chatCount, setChatCount] = useState(0);
 
   const [owner, setOwner] = useState({
+    id: "",
     name: "Kasun Perera",
     email: "kasun@email.com",
     phone: "0771234567",
     location: "Negombo, Sri Lanka",
     image: "https://i.pravatar.cc/300?img=12",
   });
+
+  /* =========================
+     LOAD OWNER DATA & STATS
+  ========================= */
+
+  const loadOwnerData = async () => {
+    try {
+      const storedUser = await AsyncStorage.getItem("user");
+      const token = await AsyncStorage.getItem("token");
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        setOwner({
+          id: user._id || "",
+          name: user.name || user.username || "Kasun Perera",
+          email: user.email || "kasun@email.com",
+          phone: user.phone || "",
+          location: user.location || "",
+          image: user.profileImage || "https://i.pravatar.cc/300?img=12",
+        });
+        
+        // Fetch counts
+        const headers = { "Authorization": `Bearer ${token}` };
+        
+        // Pets
+        const resPets = await fetch("http://172.20.10.4:8000/api/pets", { headers });
+        const dataPets = await resPets.json();
+        if (dataPets.success) setPetCount(dataPets.pets?.length || 0);
+
+        // Scans
+        const resScans = await fetch("http://172.20.10.4:8000/api/scans", { headers });
+        const dataScans = await resScans.json();
+        if (dataScans.success) setReportCount(dataScans.scans?.length || 0);
+
+        // Consultations
+        const resChats = await fetch("http://172.20.10.4:8000/api/consultations/owner", { headers });
+        const dataChats = await resChats.json();
+        if (dataChats.success) setChatCount(dataChats.consultations?.length || 0);
+      }
+    } catch (err) {
+      console.log("Error loading owner profile details:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadOwnerData();
+  }, []);
 
   /* =========================
      IMAGE PERMISSION
@@ -76,13 +126,46 @@ export default function OwnerProfileScreen({ navigation }) {
      SAVE PROFILE
   ========================= */
 
-  const handleSave = () => {
-    setIsEditing(false);
+  const handleSave = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const res = await fetch(`http://172.20.10.4:8000/api/users/${owner.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: owner.name,
+          phone: owner.phone,
+          location: owner.location,
+          profileImage: owner.image
+        })
+      });
 
-    Alert.alert(
-      "Success",
-      "Profile updated successfully!"
-    );
+      const data = await res.json();
+      if (data && data._id) {
+        // Save back updated user to AsyncStorage
+        const storedUser = await AsyncStorage.getItem("user");
+        if (storedUser) {
+          const userObj = JSON.parse(storedUser);
+          userObj.name = data.name;
+          userObj.phone = data.phone;
+          userObj.location = data.location;
+          userObj.profileImage = data.profileImage;
+          await AsyncStorage.setItem("user", JSON.stringify(userObj));
+        }
+        
+        setIsEditing(false);
+        Alert.alert("Success", "Profile updated successfully!");
+        loadOwnerData();
+      } else {
+        Alert.alert("Error", "Failed to update profile");
+      }
+    } catch (err) {
+      console.log("Error saving profile details:", err);
+      Alert.alert("Error", "Server not reachable");
+    }
   };
 
   /* =========================
@@ -217,7 +300,7 @@ export default function OwnerProfileScreen({ navigation }) {
           />
 
           <Text style={styles.statNum}>
-            2
+            {petCount}
           </Text>
 
           <Text style={styles.statLabel}>
@@ -233,7 +316,7 @@ export default function OwnerProfileScreen({ navigation }) {
           />
 
           <Text style={styles.statNum}>
-            15
+            {reportCount}
           </Text>
 
           <Text style={styles.statLabel}>
@@ -249,7 +332,7 @@ export default function OwnerProfileScreen({ navigation }) {
           />
 
           <Text style={styles.statNum}>
-            6
+            {chatCount}
           </Text>
 
           <Text style={styles.statLabel}>
@@ -275,7 +358,9 @@ export default function OwnerProfileScreen({ navigation }) {
           />
 
           <TextInput
-            style={styles.input}
+            placeholder="Name"
+            placeholderTextColor="#999"
+            style={[styles.input, { color: "#333" }]}
             value={owner.name}
             editable={isEditing}
             onChangeText={(t) =>
@@ -297,7 +382,9 @@ export default function OwnerProfileScreen({ navigation }) {
           />
 
           <TextInput
-            style={styles.input}
+            placeholder="Phone Number"
+            placeholderTextColor="#999"
+            style={[styles.input, { color: "#333" }]}
             value={owner.phone}
             editable={isEditing}
             keyboardType="phone-pad"
@@ -320,7 +407,9 @@ export default function OwnerProfileScreen({ navigation }) {
           />
 
           <TextInput
-            style={styles.input}
+            placeholder="Location"
+            placeholderTextColor="#999"
+            style={[styles.input, { color: "#333" }]}
             value={owner.location}
             editable={isEditing}
             onChangeText={(t) =>

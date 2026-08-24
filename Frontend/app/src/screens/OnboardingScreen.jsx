@@ -105,7 +105,7 @@ export default function WelcomeScreen({ navigation }) {
     <View style={styles.container}>
 
       {/* BACK BUTTON */}
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={styles.backBtn}
         onPress={() => navigation.goBack()}
       >
@@ -115,7 +115,7 @@ export default function WelcomeScreen({ navigation }) {
       {/* SKIP BUTTON */}
       <TouchableOpacity
         style={styles.skipBtn}
-        onPress={() => navigation.replace("MainApp")}
+        onPress={() => navigation.replace("SignIn")}
       >
         <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>

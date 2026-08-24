@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // NEW
 
 const { width } = Dimensions.get("window");
 
@@ -196,37 +197,88 @@ const TypingGreeting = ({ text }) => {
 };
 
 export default function DoctorHome({ navigation }) {
-  const [reviewRequests, setReviewRequests] = useState(12);
-  const [pendingReviews, setPendingReviews] = useState(5);
-  const [reviewQueue, setReviewQueue] = useState(reviewQueueData);
+  const [reviewRequests, setReviewRequests] = useState(0);
+  const [pendingReviews, setPendingReviews] = useState(0);
+  const [reviewQueue, setReviewQueue] = useState([]);
   const [activeChats, setActiveChats] = useState(activeChatsData);
   const [refreshing, setRefreshing] = useState(false);
   const [notifications, setNotifications] = useState(3);
-  
+
+  // NEW: logged-in doctor's info, loaded from AsyncStorage instead of hardcoded
+  const [doctorName, setDoctorName] = useState("Doctor");
+  const [doctorImage, setDoctorImage] = useState(null);
+
   const hour = new Date().getHours();
   const greetingText = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
 
-  // Fetch dashboard data
+  // NEW: Load the logged-in doctor's info (matches LoginScreen's AsyncStorage key: "user")
+  const loadDoctorInfo = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem("user");
+      if (stored) {
+        const user = JSON.parse(stored);
+        setDoctorName(user.name || user.username || "Doctor");
+        if (user.profileImage) setDoctorImage({ uri: user.profileImage });
+      }
+    } catch (err) {
+      console.log("Could not load doctor info:", err);
+    }
+  }, []);
+
+  // Fetch dashboard data from database
   const fetchDashboardData = useCallback(async () => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    // In real app, update with actual data
-    setReviewRequests(12);
-    setPendingReviews(5);
-    setNotifications(3);
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const res = await fetch("http://172.20.10.4:8000/api/consultations/doctor", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        const queue = (data.consultations || []).map(item => {
+          const conf = item.aiResult?.confidence || 50;
+          const priority = conf > 85 ? "High" : conf > 70 ? "Medium" : "Low";
+          
+          let imgSource;
+          if (item.petImage && item.petImage.startsWith("http")) {
+            imgSource = { uri: item.petImage };
+          } else {
+            imgSource = require("../../../assets/images/dog.png");
+          }
+
+          return {
+            id: item._id,
+            petName: item.petName || "My Dog",
+            petImage: imgSource,
+            diagnosis: item.aiResult?.disease || "Skin Scan",
+            priority,
+            timestamp: new Date(item.createdAt).toLocaleDateString(),
+            original: item
+          };
+        });
+
+        setReviewQueue(queue);
+        setReviewRequests(queue.length);
+        setPendingReviews(queue.filter(q => q.original.status === "pending").length);
+      }
+    } catch (err) {
+      console.log("Error fetching doctor dashboard consultations:", err);
+    }
   }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchDashboardData();
+    await Promise.all([fetchDashboardData(), loadDoctorInfo()]);
     setRefreshing(false);
-  }, [fetchDashboardData]);
+  }, [fetchDashboardData, loadDoctorInfo]);
 
   // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchDashboardData();
-    }, [fetchDashboardData])
+      loadDoctorInfo();
+    }, [fetchDashboardData, loadDoctorInfo])
   );
 
   const handleReviewPress = useCallback((item) => {
@@ -235,6 +287,7 @@ export default function DoctorHome({ navigation }) {
       petName: item.petName,
       reviewId: item.id,
       diagnosis: item.diagnosis,
+      consultation: item.original
     });
   }, [navigation]);
 
@@ -288,12 +341,12 @@ export default function DoctorHome({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
-            source={require("../../../assets/images/doctor.jpg")}
+            source={doctorImage || require("../../../assets/images/doctor.jpg")}
             style={styles.doctorImage}
           />
           <View>
             <TypingGreeting text={greetingText} />
-            <Text style={styles.username}>Dr. Arjun Patel</Text>
+            <Text style={styles.username}>{doctorName}</Text>
           </View>
         </View>
 

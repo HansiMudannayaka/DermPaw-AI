@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -27,81 +27,30 @@ const CARD_WIDTH = (width - 48) / 2;
 
 /* ================= ARTICLES DATA ================= */
 
-const articlesData = [
-  {
-    id: "1",
-    title: "Hot Spots in Dogs",
-    category: "Infection",
-    image:
-      "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e",
-    desc:
-      "Red, moist skin infections that need early treatment and cleaning.",
-    readTime: "5 min read",
-  },
-
-  {
-    id: "2",
-    title: "Fungal Skin Infections",
-    category: "Fungal",
-    image:
-      "https://images.unsplash.com/photo-1601758125946-6ec2ef64daf8",
-    desc:
-      "Ringworm and yeast infections in pets with proper medication advice.",
-    readTime: "7 min read",
-  },
-
-  {
-    id: "3",
-    title: "Skin Allergies",
-    category: "Allergy",
-    image:
-      "https://images.unsplash.com/photo-1558944351-c1f3e0f9c2a6",
-    desc:
-      "Food and environmental allergy reactions causing itching and redness.",
-    readTime: "4 min read",
-  },
-
-  {
-    id: "4",
-    title: "Flea & Tick Dermatitis",
-    category: "Parasite",
-    image:
-      "https://images.unsplash.com/photo-1517849845537-4d257902454a",
-    desc:
-      "Skin damage and irritation caused by parasites and poor hygiene.",
-    readTime: "6 min read",
-  },
-
-  {
-    id: "5",
-    title: "Dry Skin in Cats",
-    category: "Skin Care",
-    image:
-      "https://images.unsplash.com/photo-1511044568932-338cba0ad803",
-    desc:
-      "Learn causes of flaky skin and dehydration symptoms in cats.",
-    readTime: "3 min read",
-  },
-
-  {
-    id: "6",
-    title: "Pet Ear Infections",
-    category: "Ear Care",
-    image:
-      "https://images.unsplash.com/photo-1548199973-03cce0bbc87b",
-    desc:
-      "Common ear infection symptoms and treatment methods for pets.",
-    readTime: "5 min read",
-  },
-];
-
 export default function ArticlesScreen({ navigation }) {
   const [search, setSearch] = useState("");
+  const [articles, setArticles] = useState([]);
+
+  // Fetch articles from backend
+  useEffect(() => {
+    const fetchArticles = async () => {
+      try {
+        const res = await fetch("http://172.20.10.4:8000/api/articles");
+        const data = await res.json();
+        if (data.success) {
+          setArticles(data.articles || []);
+        }
+      } catch (err) {
+        console.log("Error fetching articles:", err);
+      }
+    };
+    fetchArticles();
+  }, []);
 
   /* ================= FILTER ================= */
 
-  const filtered = articlesData.filter((item) =>
-    item.title.toLowerCase().includes(search.toLowerCase())
+  const filtered = articles.filter((item) =>
+    (item.topic || item.title || "").toLowerCase().includes(search.toLowerCase())
   );
 
   /* ================= ARTICLE CARD ================= */
@@ -119,7 +68,7 @@ export default function ArticlesScreen({ navigation }) {
       {/* IMAGE */}
 
       <Image
-        source={{ uri: item.image }}
+        source={{ uri: item.image || "https://images.unsplash.com/photo-1543466835-00a7907e9de1" }}
         style={styles.image}
       />
 
@@ -155,12 +104,12 @@ export default function ArticlesScreen({ navigation }) {
 
       <View style={styles.bottomContent}>
         <Text numberOfLines={2} style={styles.title}>
-          {item.title}
+          {item.topic || item.title}
         </Text>
 
         <View style={styles.row}>
           <Text style={styles.readTime}>
-            {item.readTime}
+            {item.readTime || "5 min read"}
           </Text>
 
           <Ionicons
@@ -265,7 +214,7 @@ export default function ArticlesScreen({ navigation }) {
 
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item._id || item.id}
         renderItem={renderItem}
         numColumns={2}
         columnWrapperStyle={{

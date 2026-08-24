@@ -95,7 +95,7 @@ export default function SignupScreen({ navigation }) {
       setLoading(true);
 
       const res = await fetch(
-        "http://172.20.10.4:5000/api/auth/register",
+        "http://172.20.10.4:8000/api/auth/register",
         {
           method: "POST",
           headers: {
@@ -360,6 +360,7 @@ const styles = StyleSheet.create({
 
   input: {
     padding: 12,
+    color: "#333",
   },
 
   strengthRow: {

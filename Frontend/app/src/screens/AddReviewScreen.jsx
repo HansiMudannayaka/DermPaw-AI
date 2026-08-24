@@ -17,12 +17,22 @@ const { width } = Dimensions.get("window");
 const PRIMARY = "#3A0070";
 const BG = "#F4F5FA";
 
-export default function AddReviewScreen({ navigation }) {
+export default function AddReviewScreen({ navigation, route }) {
+  const { consultation } = route.params || {};
+
+  const initialDisease = consultation?.aiResult?.disease || "Hot Spot (Acute Moist Dermatitis)";
+  const isDefaultChoice = ["Hot Spot (Acute Moist Dermatitis)", "Ringworm"].includes(initialDisease);
+
   const [selectedDiagnosis, setSelectedDiagnosis] = useState(
-    "Hot Spot (Acute Moist Dermatitis)"
+    isDefaultChoice ? initialDisease : "Other"
   );
-  const [customDiagnosis, setCustomDiagnosis] = useState("");
-  const [severity, setSeverity] = useState("Severe");
+  const [customDiagnosis, setCustomDiagnosis] = useState(
+    isDefaultChoice ? "" : initialDisease
+  );
+
+  const conf = consultation?.aiResult?.confidence || 50;
+  const initialSeverity = conf > 85 ? "Severe" : conf > 70 ? "Moderate" : "Mild";
+  const [severity, setSeverity] = useState(initialSeverity);
   const [notes, setNotes] = useState("");
 
   const [recommendations, setRecommendations] = useState({
@@ -41,7 +51,6 @@ export default function AddReviewScreen({ navigation }) {
   /* ================= SUBMIT ================= */
 
   const handleSubmit = () => {
-    // ✅ FIX: lock correct diagnosis value
     const diagnosisToSend =
       selectedDiagnosis === "Other"
         ? customDiagnosis.trim()
@@ -76,12 +85,18 @@ export default function AddReviewScreen({ navigation }) {
     console.log("DIAGNOSIS SENT:", diagnosisToSend);
 
     navigation.navigate("Summary", {
-      diagnosis: diagnosisToSend, // ✅ FIXED
+      consultation: consultation,
+      diagnosis: diagnosisToSend,
       severity: severity,
       recommendation: finalRecommendations.join("\n"),
       notes: notes,
     });
   };
+
+  let petImage = require("../../../assets/images/dog1.png");
+  if (consultation?.petImage && consultation.petImage.startsWith("http")) {
+    petImage = { uri: consultation.petImage };
+  }
 
   return (
     <ScrollView
@@ -107,11 +122,11 @@ export default function AddReviewScreen({ navigation }) {
       {/* PET INFO */}
       <View style={styles.petCard}>
         <Image
-          source={require("../../../assets/images/dog1.png")}
+          source={petImage}
           style={styles.avatar}
         />
         <View>
-          <Text style={styles.petName}>Luna</Text>
+          <Text style={styles.petName}>{consultation?.petName || "Luna"}</Text>
           <Text style={styles.petSub}>
             Golden Retriever • 2Y • Female
           </Text>
@@ -146,8 +161,9 @@ export default function AddReviewScreen({ navigation }) {
 
         {isOtherSelected && (
           <TextInput
-            style={styles.input}
             placeholder="Write custom diagnosis..."
+            placeholderTextColor="#999"
+            style={[styles.input, { color: "#333" }]}
             value={customDiagnosis}
             onChangeText={setCustomDiagnosis}
           />
@@ -180,9 +196,10 @@ export default function AddReviewScreen({ navigation }) {
 
         <Text style={styles.label}>Notes</Text>
         <TextInput
-          style={styles.notes}
-          multiline
           placeholder="Enter clinical notes..."
+          placeholderTextColor="#999"
+          style={[styles.notes, { color: "#333" }]}
+          multiline
           value={notes}
           onChangeText={setNotes}
         />

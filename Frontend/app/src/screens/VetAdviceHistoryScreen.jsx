@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 
 import {
   View,
@@ -15,6 +15,7 @@ import {
 } from "@expo/vector-icons";
 
 import { SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /* ================= THEME ================= */
 
@@ -34,44 +35,47 @@ const TYPO = {
 
 /* ================= DATA ================= */
 
-const vetResponses = [
-  {
-    id: "1",
-    doctor: "Dr. Anjali Perera",
-    date: "Today",
-    time: "10:30 AM",
-    disease: "Hot Spot",
-    severity: "Severe",
-    image:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2",
-  },
-
-  {
-    id: "2",
-    doctor: "Dr. Ravi Kumar",
-    date: "Yesterday",
-    time: "6:10 PM",
-    disease: "Hot Spot",
-    severity: "Moderate",
-    image:
-      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d",
-  },
-
-  {
-    id: "3",
-    doctor: "Dr. Silva Fernando",
-    date: "2 Days Ago",
-    time: "3:45 PM",
-    disease: "Skin Infection",
-    severity: "Mild",
-    image:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e",
-  },
-];
-
 export default function AdviceHistoryScreen({
   navigation,
 }) {
+  const [vetResponses, setVetResponses] = useState([]);
+
+  // Fetch advice history (approved consultations) from backend
+  useEffect(() => {
+    const fetchAdviceHistory = async () => {
+      try {
+        const token = await AsyncStorage.getItem("token");
+        const res = await fetch("http://172.20.10.4:8000/api/consultations/owner", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        if (data.success) {
+          const list = (data.consultations || [])
+            .filter(item => item.status === "approved")
+            .map(item => {
+              const d = new Date(item.updatedAt);
+              return {
+                id: item._id,
+                doctor: item.doctor?.name || "Doctor",
+                date: d.toLocaleDateString(),
+                time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                disease: item.aiResult?.disease || "Skin Scan",
+                severity: item.aiResult?.confidence > 85 ? "Severe" : item.aiResult?.confidence > 70 ? "Moderate" : "Mild",
+                image: item.doctor?.image || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2",
+                original: item
+              };
+            });
+          setVetResponses(list);
+        }
+      } catch (err) {
+        console.log("Error loading advice history:", err);
+      }
+    };
+    fetchAdviceHistory();
+  }, []);
+
   /* ================= SEVERITY COLORS ================= */
 
   const getSeverityColor = (
@@ -159,12 +163,10 @@ export default function AdviceHistoryScreen({
                 navigation.navigate(
                   "VetAdvice",
                   {
-                    doctor:
-                      item.doctor,
-                    disease:
-                      item.disease,
-                    severity:
-                      item.severity,
+                    consultation: item.original,
+                    doctor: item.doctor,
+                    disease: item.disease,
+                    severity: item.severity,
                     date: item.date,
                     time: item.time,
                   }

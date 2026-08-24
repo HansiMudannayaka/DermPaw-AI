@@ -18,8 +18,13 @@ import {
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // NEW
 
 const { width } = Dimensions.get("window");
+
+// NEW: same backend host used by VetDoctors.jsx / LoginScreen.js
+const API_URL = "http://172.20.10.4:8000";
+const USERS_API = `${API_URL}/api/users`;
 
 const COLORS = {
   PRIMARY: "#4B0082",
@@ -68,24 +73,27 @@ const personalInfoFields = [
   },
 ];
 
+// NEW: fallback used only until the real profile loads / for fields the backend doesn't store
+const DEFAULT_PROFILE = {
+  doctorName: "Doctor",
+  email: "",
+  clinic: "PetCare Veterinary Clinic",
+  experience: "",
+  specialization: "",
+  phone: "",
+  location: "",
+  bio: "",
+  image: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
+};
+
 export default function DoctorProfileScreen({ navigation }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // NEW
   const [originalProfile, setOriginalProfile] = useState(null);
+  const [userId, setUserId] = useState(null); // NEW: backend _id for PUT requests
 
-  const [profile, setProfile] = useState({
-    doctorName: "Dr. Anjali Perera",
-    email: "dr.anjali@petcare.com",
-    clinic: "PetCare Veterinary Clinic",
-    experience: "8 Years Experience",
-    specialization: "Dermatology Specialist",
-    phone: "+94 75 287 5365",
-    location: "Negombo, Sri Lanka",
-    bio:
-      "Dedicated veterinarian with over 8 years of experience in pet dermatology. Passionate about providing the best care for your furry friends.",
-    image:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
-  });
+  const [profile, setProfile] = useState(DEFAULT_PROFILE);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.96)).current;
@@ -117,6 +125,33 @@ export default function DoctorProfileScreen({ navigation }) {
   useEffect(() => {
     (async () => {
       await ImagePicker.requestMediaLibraryPermissionsAsync();
+    })();
+  }, []);
+
+  // NEW: Load the real logged-in doctor from AsyncStorage (saved by LoginScreen)
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem("user");
+        if (stored) {
+          const user = JSON.parse(stored);
+          setUserId(user._id || user.id || null);
+          setProfile((prev) => ({
+            ...prev,
+            doctorName: user.name || user.username || prev.doctorName,
+            email: user.email || prev.email,
+            specialization: user.specialization || prev.specialization,
+            experience: user.experience || prev.experience,
+            // clinic, phone, location, bio, image aren't in the backend schema yet —
+            // kept from defaults / local edits only, for now
+            image: user.profileImage || prev.image,
+          }));
+        }
+      } catch (err) {
+        console.log("Could not load profile:", err);
+      } finally {
+        setIsLoading(false);
+      }
     })();
   }, []);
 
@@ -155,15 +190,52 @@ export default function DoctorProfileScreen({ navigation }) {
     }
   };
 
+  // UPDATED: actually saves to the backend instead of a fake timeout
   const handleSave = async () => {
+    if (!userId) {
+      Alert.alert("Error", "Could not identify your account. Please log in again.");
+      return;
+    }
+
     setIsSaving(true);
 
-    setTimeout(() => {
+    try {
+      const payload = {
+        name: profile.doctorName,
+        email: profile.email,
+        specialization: profile.specialization,
+        experience: profile.experience,
+        // clinic, phone, location, bio, image are not yet supported by the backend schema
+      };
+
+      const res = await fetch(`${USERS_API}/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to update profile");
+      }
+
+      // Keep AsyncStorage in sync so DoctorHome etc. show the updated name too
+      const stored = await AsyncStorage.getItem("user");
+      if (stored) {
+        const user = JSON.parse(stored);
+        const updatedUser = { ...user, ...payload };
+        await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
+      }
+
       setIsSaving(false);
       setIsEditing(false);
-
       Alert.alert("Success", "Profile updated successfully!");
-    }, 1500);
+    } catch (err) {
+      console.log("Profile update error:", err);
+      setIsSaving(false);
+      Alert.alert("Error", err.message || "Could not update profile. Check your connection.");
+    }
   };
 
   const handleCancel = () => {
@@ -174,6 +246,7 @@ export default function DoctorProfileScreen({ navigation }) {
     setIsEditing(false);
   };
 
+  // UPDATED: clears stored session on logout
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       {
@@ -183,7 +256,10 @@ export default function DoctorProfileScreen({ navigation }) {
       {
         text: "Logout",
         style: "destructive",
-        onPress: () => navigation.replace("SignIn"),
+        onPress: async () => {
+          await AsyncStorage.multiRemove(["token", "user"]); // NEW
+          navigation.replace("SignIn");
+        },
       },
     ]);
   };
@@ -270,7 +346,9 @@ export default function DoctorProfileScreen({ navigation }) {
               )}
             </TouchableOpacity>
 
-            <Text style={styles.name}>{profile.doctorName}</Text>
+            <Text style={styles.name}>
+              {isLoading ? "Loading..." : profile.doctorName}
+            </Text>
 
             <View style={styles.badge}>
               <MaterialCommunityIcons
@@ -305,7 +383,9 @@ export default function DoctorProfileScreen({ navigation }) {
               <View style={styles.statDivider} />
 
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>8yrs</Text>
+                <Text style={styles.statNumber}>
+                  {profile.experience || "—"}
+                </Text>
                 <Text style={styles.statLabel}>Experience</Text>
               </View>
             </View>

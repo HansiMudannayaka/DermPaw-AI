@@ -9,26 +9,17 @@ import {
   Alert,
   TextInput,
   Modal,
+  StatusBar,
 } from "react-native";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 
-export default function PetProfile2({ navigation }) {
-  const [pets, setPets] = useState([
-    {
-      id: 1,
-      name: "Zara",
-      image: "https://images.dog.ceo/breeds/shih-tzu/n02086240_2550.jpg",
-      age: "3 Months",
-      weight: "2.5 Kg",
-      gender: "Female",
-      description: "Adorable Shih Tzu puppy.",
-      color: "Grey with Black",
-    },
-  ]);
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-  const [selectedPet, setSelectedPet] = useState(pets[0]);
+export default function PetProfile2({ navigation }) {
+  const [pets, setPets] = useState([]);
+  const [selectedPet, setSelectedPet] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -41,9 +32,24 @@ export default function PetProfile2({ navigation }) {
     color: "",
   });
 
-  const owner = {
+  const [owner, setOwner] = useState({
     name: "Divakaran K",
     image: "https://randomuser.me/api/portraits/men/32.jpg",
+  });
+
+  const fetchOwner = async () => {
+    try {
+      const storedUser = await AsyncStorage.getItem("user");
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        setOwner({
+          name: user.name || user.username || "Kasun Perera",
+          image: user.profileImage || "https://randomuser.me/api/portraits/men/32.jpg",
+        });
+      }
+    } catch (err) {
+      console.log("Error loading owner details:", err);
+    }
   };
 
   useEffect(() => {
@@ -56,6 +62,41 @@ export default function PetProfile2({ navigation }) {
     })();
   }, []);
 
+  const fetchPets = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const res = await fetch("http://172.20.10.4:8000/api/pets", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPets(data.pets || []);
+        if (data.pets && data.pets.length > 0) {
+          // Keep current selected pet if it still exists in the refreshed list
+          setSelectedPet(prev => {
+            if (prev) {
+              const found = data.pets.find(p => p._id === prev._id);
+              if (found) return found;
+            }
+            return data.pets[0];
+          });
+        }
+      }
+    } catch (error) {
+      console.log("Error fetching pets:", error);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      fetchPets();
+      fetchOwner();
+    });
+    return unsubscribe;
+  }, [navigation]);
+
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
@@ -65,17 +106,27 @@ export default function PetProfile2({ navigation }) {
 
     if (!result.canceled) {
       const uri = result.assets[0].uri;
-
-      const updated = pets.map((p) =>
-        p.id === selectedPet.id ? { ...p, image: uri } : p
-      );
-
-      setPets(updated);
-      setSelectedPet({ ...selectedPet, image: uri });
+      try {
+        const token = await AsyncStorage.getItem("token");
+        const res = await fetch(`http://172.20.10.4:8000/api/pets/${selectedPet._id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ image: uri })
+        });
+        const data = await res.json();
+        if (data.success) {
+          fetchPets();
+        }
+      } catch (err) {
+        console.log("Error updating image:", err);
+      }
     }
   };
 
-  const saveNewPet = () => {
+  const saveNewPet = async () => {
     const requiredFields = [
       "name",
       "age",
@@ -94,20 +145,43 @@ export default function PetProfile2({ navigation }) {
       return;
     }
 
-    if (isEditing) {
-      const updated = pets.map((p) =>
-        p.id === selectedPet.id ? { ...p, ...newPet } : p
-      );
-      setPets(updated);
-      setSelectedPet({ ...selectedPet, ...newPet });
-    } else {
-      const pet = {
-        id: Date.now(),
-        ...newPet,
-        image: "https://via.placeholder.com/150",
-      };
-      setPets([...pets, pet]);
-      setSelectedPet(pet);
+    try {
+      const token = await AsyncStorage.getItem("token");
+      let url = "http://172.20.10.4:8000/api/pets";
+      let method = "POST";
+
+      if (isEditing) {
+        url = `http://172.20.10.4:8000/api/pets/${selectedPet._id}`;
+        method = "PUT";
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newPet.name.trim(),
+          age: newPet.age.trim(),
+          weight: newPet.weight.trim(),
+          gender: newPet.gender.trim(),
+          description: newPet.description.trim(),
+          color: newPet.color.trim(),
+          image: newPet.image || "https://images.dog.ceo/breeds/shih-tzu/n02086240_2550.jpg",
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert("Success", isEditing ? "Pet updated successfully" : "Pet added successfully");
+        fetchPets();
+      } else {
+        Alert.alert("Error", data.message || "Failed to save pet");
+      }
+    } catch (error) {
+      console.log("Error saving pet:", error);
+      Alert.alert("Error", "Server not reachable");
     }
 
     setNewPet({
@@ -140,14 +214,92 @@ export default function PetProfile2({ navigation }) {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => {
-          const updated = pets.filter((p) => p.id !== selectedPet.id);
-          setPets(updated);
-          setSelectedPet(updated[0]);
+        onPress: async () => {
+          try {
+            const token = await AsyncStorage.getItem("token");
+            const res = await fetch(`http://172.20.10.4:8000/api/pets/${selectedPet._id}`, {
+              method: "DELETE",
+              headers: {
+                "Authorization": `Bearer ${token}`
+              }
+            });
+            const data = await res.json();
+            if (data.success) {
+              Alert.alert("Deleted", "Pet deleted successfully");
+              fetchPets();
+            } else {
+              Alert.alert("Error", data.message || "Failed to delete pet");
+            }
+          } catch (error) {
+            console.log("Error deleting pet:", error);
+            Alert.alert("Error", "Server not reachable");
+          }
         },
       },
     ]);
   };
+
+  if (!selectedPet) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center", flex: 1 }]}>
+        <StatusBar barStyle="dark-content" />
+        <Ionicons name="paw" size={80} color="#E6D9FF" />
+        <Text style={{ color: "#4B0082", fontSize: 18, fontWeight: "bold", marginTop: 20 }}>No pets added yet 🐶</Text>
+        <Text style={{ color: "#777", fontSize: 13, marginTop: 8, textAlign: "center", paddingHorizontal: 40 }}>
+          Add your dog's profile to start scanning for skin diseases.
+        </Text>
+        <TouchableOpacity
+          style={[styles.editBtn, { marginTop: 24, paddingHorizontal: 30, alignSelf: "center", flex: 0, flexDirection: "row", gap: 8 }]}
+          onPress={() => {
+            setIsEditing(false);
+            setNewPet({
+              name: "",
+              age: "",
+              weight: "",
+              gender: "",
+              description: "",
+              color: "",
+            });
+            setModalVisible(true);
+          }}
+        >
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={styles.actionText}>Add Pet</Text>
+        </TouchableOpacity>
+
+        {/* Add Pet Modal for empty state */}
+        <Modal visible={modalVisible} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Add New Pet</Text>
+                <TouchableOpacity onPress={() => setModalVisible(false)}>
+                  <Ionicons name="close" size={22} color="#4B0082" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalSub}>Fill pet details below</Text>
+              {["name", "age", "weight", "gender", "color", "description"].map((field) => (
+                <TextInput
+                  key={field}
+                  placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+                  placeholderTextColor="#999"
+                  style={[styles.input, { color: "#333" }]}
+                  value={newPet[field]}
+                  onChangeText={(t) => setNewPet({ ...newPet, [field]: t })}
+                />
+              ))}
+              <TouchableOpacity onPress={saveNewPet}>
+                <LinearGradient colors={["#6A0DAD", "#4B0082"]} style={styles.saveBtn}>
+                  <Ionicons name="paw" size={18} color="#fff" />
+                  <Text style={styles.saveText}>Save Pet</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -247,10 +399,10 @@ export default function PetProfile2({ navigation }) {
         <View style={styles.petRow}>
           {pets.map((pet) => (
             <TouchableOpacity
-              key={pet.id}
+              key={pet._id || pet.id}
               style={[
                 styles.petCard,
-                selectedPet.id === pet.id && styles.activeCard,
+                selectedPet?._id === pet._id && styles.activeCard,
               ]}
               onPress={() => setSelectedPet(pet)}
             >
@@ -300,8 +452,9 @@ export default function PetProfile2({ navigation }) {
               (field) => (
                 <TextInput
                   key={field}
-                  placeholder={field.toUpperCase()}
-                  style={styles.input}
+                  placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+                  placeholderTextColor="#999"
+                  style={[styles.input, { color: "#333" }]}
                   value={newPet[field]}
                   onChangeText={(t) =>
                     setNewPet({ ...newPet, [field]: t })

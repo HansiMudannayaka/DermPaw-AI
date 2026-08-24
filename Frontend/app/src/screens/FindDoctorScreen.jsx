@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -23,54 +23,30 @@ const BG = "#F6F1FF";
 const LIGHT_PURPLE = "#EEE6FF";
 const CARD_WIDTH = (width - 50) / 2;
 
-/* ================= DATA ================= */
-
-const doctors = [
-  {
-    id: "1",
-    name: "Dr. Sarah",
-    role: "Dermatologist",
-    rating: "5.0",
-    reviews: "133 Reviews",
-    image:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2",
-  },
-  {
-    id: "2",
-    name: "Dr. Emily",
-    role: "Veterinarian",
-    rating: "4.9",
-    reviews: "256 Reviews",
-    image:
-      "https://images.unsplash.com/photo-1594824476967-48c8b964273f",
-  },
-  {
-    id: "3",
-    name: "Dr. James",
-    role: "Pet Specialist",
-    rating: "5.0",
-    reviews: "327 Reviews",
-    image:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e",
-  },
-  {
-    id: "4",
-    name: "Dr. Michael",
-    role: "General Vet",
-    rating: "4.9",
-    reviews: "423 Reviews",
-    image:
-      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d",
-  },
-];
-
 export default function DoctorListScreen({ navigation }) {
   const [search, setSearch] = useState("");
+  const [doctors, setDoctors] = useState([]);
+
+  // Fetch doctors
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      try {
+        const res = await fetch("http://172.20.10.4:8000/api/users");
+        const data = await res.json();
+        // Filter doctor role (data is array of users)
+        const docs = data.filter((u) => u.role === "doctor" || !u.role);
+        setDoctors(docs);
+      } catch (err) {
+        console.log("Error fetching doctors:", err);
+      }
+    };
+    fetchDoctors();
+  }, []);
 
   const filteredDoctors = doctors.filter(
     (item) =>
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.role.toLowerCase().includes(search.toLowerCase())
+      (item.name || "").toLowerCase().includes(search.toLowerCase()) ||
+      (item.specialization || "").toLowerCase().includes(search.toLowerCase())
   );
 
   const renderDoctor = ({ item, index }) => {
@@ -93,7 +69,7 @@ export default function DoctorListScreen({ navigation }) {
 
         {/* TOP */}
         <View style={styles.topRow}>
-          <Image source={{ uri: item.image }} style={styles.image} />
+          <Image source={{ uri: item.image || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2" }} style={styles.image} />
 
           {/* PAW ICON ONLY */}
           <TouchableOpacity
@@ -112,18 +88,18 @@ export default function DoctorListScreen({ navigation }) {
 
         {/* NAME */}
         <Text style={[styles.name, isFeatured && styles.featuredText]}>
-          {item.name}
+          {item.name || item.username}
         </Text>
 
         {/* ROLE */}
         <Text style={[styles.role, isFeatured && styles.featuredSubText]}>
-          {item.role}
+          {item.specialization || item.role || "Veterinarian"}
         </Text>
 
         {/* EXPERIENCE */}
         <View style={styles.experienceBox}>
           <Ionicons name="briefcase" size={14} color={PRIMARY} />
-          <Text style={styles.experienceText}>8 Years Experience</Text>
+          <Text style={styles.experienceText}>{item.experience || "5 Years"} Experience</Text>
         </View>
 
         {/* BOTTOM */}
@@ -134,14 +110,14 @@ export default function DoctorListScreen({ navigation }) {
               <Text
                 style={[styles.rating, isFeatured && styles.featuredText]}
               >
-                {item.rating}
+                {item.rating || "5.0"}
               </Text>
             </View>
 
             <Text
               style={[styles.review, isFeatured && styles.featuredSubText]}
             >
-              {item.reviews}
+              {item.reviews || "100+ Reviews"}
             </Text>
           </View>
 
@@ -232,7 +208,7 @@ export default function DoctorListScreen({ navigation }) {
       <FlatList
         data={filteredDoctors}
         renderItem={renderDoctor}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item._id || item.id}
         numColumns={2}
         columnWrapperStyle={{ justifyContent: "space-between" }}
         showsVerticalScrollIndicator={false}

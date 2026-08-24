@@ -6,8 +6,10 @@ import {
   Image,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PRIMARY = "#3A0070";
 const BG = "#F4F5FA";
@@ -16,20 +18,54 @@ export default function SummaryScreen({ route, navigation }) {
   const [submitted, setSubmitted] = useState(false);
 
   const {
-    petName = "Luna",
-    petImage = require("../../../assets/images/dog1.png"),
-    breed = "Golden Retriever",
-    age = "2Y",
-    gender = "Female",
-
-    disease = "Hot Spot (Acute Moist Dermatitis)",
-    confidence = "92%",
-
+    consultation,
     diagnosis,
     severity = "Severe",
     recommendation,
     notes = "Large area of inflammation with moist lesions. Immediate treatment required.",
   } = route.params || {};
+
+  const petName = consultation?.petName || route.params?.petName || "Luna";
+
+  let petImage = route.params?.petImage || require("../../../assets/images/dog1.png");
+  if (consultation?.petImage && consultation.petImage.startsWith("http")) {
+    petImage = { uri: consultation.petImage };
+  }
+
+  const breed = "Golden Retriever";
+  const age = "2Y";
+  const gender = "Female";
+
+  const disease = consultation?.aiResult?.disease || route.params?.disease || "Skin Scan";
+  const confidence = consultation?.aiResult?.confidence ? `${consultation.aiResult.confidence}%` : (route.params?.confidence || "92%");
+
+  const handleNotify = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const adviceText = `Diagnosis: ${diagnosis}\nSeverity: ${severity}\nRecommendations: ${recommendation}\nNotes: ${notes}`;
+      
+      const res = await fetch(`http://172.20.10.4:8000/api/consultations/${consultation._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          status: "approved",
+          advice: adviceText
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubmitted(true);
+      } else {
+        Alert.alert("Error", data.message || "Failed to submit review");
+      }
+    } catch (err) {
+      console.log("Error submitting vet review:", err);
+      Alert.alert("Error", "Server not reachable");
+    }
+  };
 
   return (
     <ScrollView
@@ -131,9 +167,9 @@ export default function SummaryScreen({ route, navigation }) {
         style={styles.button}
         onPress={() => {
           if (!submitted) {
-            setSubmitted(true);
+            handleNotify();
           } else {
-            navigation.navigate("NextScreen");
+            navigation.navigate("DoctorHome");
           }
         }}
       >
