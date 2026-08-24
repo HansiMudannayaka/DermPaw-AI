@@ -1,3 +1,6 @@
+const dns = require("dns");
+dns.setDefaultResultOrder("ipv4first"); // force IPv4 DNS resolution
+
 const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
@@ -19,9 +22,17 @@ app.get("/", (req, res) => {
 /* ================= ROUTES ================= */
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/users");
+const petRoutes = require("./routes/petRoutes");
+const articleRoutes = require("./routes/articleRoutes");
+const consultationRoutes = require("./routes/consultationRoutes");
+const scanRoutes = require("./routes/scanRoutes");
 
-app.use("/api/auth", authRoutes);   // ✅ LOGIN + REGISTER
-app.use("/api/users", userRoutes);  // ✅ CRUD
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/pets", petRoutes);
+app.use("/api/articles", articleRoutes);
+app.use("/api/consultations", consultationRoutes);
+app.use("/api/scans", scanRoutes);
 
 /* ================= DB ================= */
 const connectDB = async () => {
