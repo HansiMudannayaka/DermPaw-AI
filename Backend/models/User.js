@@ -35,20 +35,50 @@ username: {
       default: "owner",
     },
 
-    // ================= DOCTOR INFO =================
+    // ================= DOCTOR & PROFILE INFO =================
+    image: {
+      type: String,
+      default: "",
+    },
+    profileImage: {
+      type: String,
+      default: "",
+    },
     specialization: {
       type: String,
       default: "",
     },
-
     experience: {
       type: String,
       default: "",
     },
-
     licenseNo: {
       type: String,
       default: "",
+    },
+    clinic: {
+      type: String,
+      default: "",
+    },
+    phone: {
+      type: String,
+      default: "",
+    },
+    location: {
+      type: String,
+      default: "",
+    },
+    bio: {
+      type: String,
+      default: "",
+    },
+    rating: {
+      type: String,
+      default: "5.0",
+    },
+    reviews: {
+      type: String,
+      default: "100+ Reviews",
     },
 
     // ================= STATUS =================

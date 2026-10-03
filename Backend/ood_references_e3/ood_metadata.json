@@ -1,0 +1,23 @@
+{
+    "model": "E3 MobileNetV2",
+    "embedding_layer": "global_average_pooling2d",
+    "embedding_dimension": 1280,
+    "train_samples": 3767,
+    "validation_samples": 807,
+    "test_used_for_calibration": false,
+    "covariance_method": "LedoitWolf",
+    "shrinkage": 0.018495826050639153,
+    "distance": "Mahalanobis",
+    "threshold_source": "E3 validation ID embeddings",
+    "threshold_percentile": 99.0,
+    "ood_threshold": 60.33431625366211,
+    "validation_id_acceptance_rate": 0.9888475836431226,
+    "validation_id_rejection_rate": 0.01115241635687736,
+    "preprocessing": "RGB -> resize 224x224 -> MobileNetV2 preprocess_input",
+    "class_order": [
+        "demodicosis",
+        "dermatitis",
+        "healthy",
+        "ringworm"
+    ]
+}

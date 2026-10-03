@@ -51,11 +51,19 @@ const registerUser = async (req, res) => {
       token,
       user: {
         _id: user._id,
-        name: user.name,
+        name: user.name || user.username,
         username: user.username,
         email: user.email,
         role: user.role,
         status: user.status,
+        specialization: user.specialization || "",
+        experience: user.experience || "",
+        clinic: user.clinic || "",
+        phone: user.phone || "",
+        location: user.location || "",
+        bio: user.bio || "",
+        image: user.image || "",
+        profileImage: user.profileImage || "",
       },
     });
 
@@ -118,11 +126,19 @@ const loginUser = async (req, res) => {
       token,
       user: {
         _id: user._id,
-        //name: user.name,
+        name: user.name || user.username,
         username: user.username,
         email: user.email,
         role: user.role,
         status: user.status,
+        specialization: user.specialization || "",
+        experience: user.experience || "",
+        clinic: user.clinic || "",
+        phone: user.phone || "",
+        location: user.location || "",
+        bio: user.bio || "",
+        image: user.image || user.profileImage || "",
+        profileImage: user.profileImage || user.image || "",
       },
     });
 

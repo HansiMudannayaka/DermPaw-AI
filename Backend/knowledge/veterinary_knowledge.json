@@ -1,0 +1,74 @@
+[
+  {
+    "id": "demodex_01",
+    "disease": "demodicosis",
+    "title": "Canine Demodicosis: Overview & Etiology",
+    "keywords": ["demodicosis", "demodex", "mites", "folliculorum", "causes", "mange", "hair loss"],
+    "content": "Canine demodicosis is an inflammatory parasitic skin disease caused by overpopulation of Demodex canis mites residing inside canine hair follicles and sebaceous glands. While small numbers of mites are part of normal skin flora transferred during nursing, clinical disease develops when the host's local or systemic immune response is compromised.",
+    "source": "Muller and Kirk's Small Animal Dermatology, 7th Edition"
+  },
+  {
+    "id": "demodex_02",
+    "disease": "demodicosis",
+    "title": "Demodicosis: Clinical Signs & Lesions",
+    "keywords": ["demodicosis", "alopecia", "comedones", "papules", "pustules", "periocular", "face", "scaling"],
+    "content": "Clinical signs of localized demodicosis typically feature focal, well-demarcated patches of hair loss (alopecia), erythema, scaling, and comedones, often appearing around the periocular region, muzzle, or forelegs. In generalized demodicosis, large coalescing alopecic areas with follicular papules, pustules, hyperpigmentation, and secondary deep bacterial folliculitis/furunculosis can develop. Pruritus is initially mild but becomes intense if secondary bacterial pyoderma is present.",
+    "source": "World Small Animal Veterinary Association (WSAVA) Dermatological Guidelines"
+  },
+  {
+    "id": "demodex_03",
+    "disease": "demodicosis",
+    "title": "Demodicosis: Diagnostic Confirmation & Management",
+    "keywords": ["demodicosis", "deep skin scraping", "trichogram", "diagnosis", "isoxazolines", "treatment"],
+    "content": "Definitive diagnosis requires deep skin scrapings until capillary bleeding occurs, or trichogram of plucked hairs to visualize live Demodex mites, eggs, and larvae under light microscopy. Modern veterinary management utilizes isoxazoline class parasiticides prescribed by a veterinarian, alongside antiseptic antimicrobial bathing if secondary pyoderma is confirmed. Immunosuppressants such as corticosteroids are contraindicated.",
+    "source": "Veterinary Dermatology Guidelines for Canine Demodicosis"
+  },
+  {
+    "id": "dermatitis_01",
+    "disease": "dermatitis",
+    "title": "Canine Atopic & Allergic Dermatitis: Overview & Pathogenesis",
+    "keywords": ["dermatitis", "atopic", "allergy", "allergens", "pruritus", "scratching", "inflammation"],
+    "content": "Canine dermatitis encompasses inflammatory skin conditions triggered by environmental allergens (atopic dermatitis), adverse food reactions, flea bites (Flea Allergy Dermatitis), or contact irritants. Genetically predisposed dogs with epidermal barrier defects allow allergen penetration, stimulating IgE-mediated hypersensitivity and inflammatory cytokine release.",
+    "source": "International Committee on Allergic Diseases of Animals (ICADA)"
+  },
+  {
+    "id": "dermatitis_02",
+    "disease": "dermatitis",
+    "title": "Canine Dermatitis: Clinical Signs & Affected Anatomical Sites",
+    "keywords": ["dermatitis", "itching", "licking", "paws", "ears", "ventrum", "erythema", "excoriation"],
+    "content": "The hallmark sign of canine allergic dermatitis is moderate to severe pruritus manifesting as constant scratching, face rubbing, chewing of paws, and flank licking. Common anatomical sites include the face, ear canals (otitis externa), axillae, groin, ventral abdomen, and interdigital spaces. Primary lesions include erythematous macules and patches, rapidly progressing to secondary excoriations, lichenification, and salivary staining of the fur.",
+    "source": "BSAVA Manual of Canine and Feline Dermatology, 4th Edition"
+  },
+  {
+    "id": "dermatitis_03",
+    "disease": "dermatitis",
+    "title": "Canine Dermatitis: Multimodal Management & Red Flags",
+    "keywords": ["dermatitis", "management", "antihistamine", "topical", "shampoo", "secondary infection", "vet check"],
+    "content": "Management requires a multimodal approach under veterinary guidance: identifying and minimizing allergen exposure, restoring the skin lipid barrier with topical moisturizers and fatty acids, and targeted anti-pruritic therapy. Red flags requiring urgent veterinary attention include acute moist dermatitis (hot spots), severe open excoriations with purulent exudate, systemic lethargy, or unmanaged pain.",
+    "source": "Clinical Handbook of Canine Dermatology"
+  },
+  {
+    "id": "ringworm_01",
+    "disease": "ringworm",
+    "title": "Canine Ringworm (Dermatophytosis): Etiology & Zoonotic Potential",
+    "keywords": ["ringworm", "dermatophytosis", "microsporum", "fungus", "zoonotic", "contagious", "fungal"],
+    "content": "Dermatophytosis (ringworm) is a superficial fungal infection of keratinized structures (hair shafts, stratum corneum, and claws) primarily caused by Microsporum canis, Microsporum gypseum, or Trichophyton mentagrophytes. It is highly contagious among animals and possesses zoonotic potential, meaning it can readily transmit to humans, especially children and immunocompromised individuals.",
+    "source": "European College of Veterinary Dermatology (ECVD) Consensus Guidelines"
+  },
+  {
+    "id": "ringworm_02",
+    "disease": "ringworm",
+    "title": "Ringworm: Classical Clinical Signs & Lesion Morphology",
+    "keywords": ["ringworm", "circular", "bald patch", "expanding", "crusts", "scaling", "brittle hair"],
+    "content": "The classical presentation consists of one or multiple expanding, circular to irregular alopecic patches with fine cigarette-ash scaling, crusting, and broken, brittle hairs. Lesions frequently originate on the face, ears, muzzle, and paws. Pruritus is typically absent to mild unless complicated by secondary bacterial infection or intense inflammatory kerion formation.",
+    "source": "Muller and Kirk's Small Animal Dermatology, 7th Edition"
+  },
+  {
+    "id": "ringworm_03",
+    "disease": "ringworm",
+    "title": "Ringworm: Diagnostic Protocols, Isolation & Disinfection",
+    "keywords": ["ringworm", "woods lamp", "fungal culture", "dtm", "isolation", "disinfection", "antifungal"],
+    "content": "Veterinary diagnosis utilizes Wood's lamp examination (apple-green fluorescence for M. canis), direct microscopic hair examination (trichogram), and definitive fungal culture on Dermatophyte Test Medium (DTM) or PCR. Management includes topical antifungal shampoos/rinses, systemic antifungal medication for generalized cases, strict quarantine from other household pets, and thorough environmental decontamination with diluted bleach or accelerated hydrogen peroxide.",
+    "source": "Infectious Diseases of the Dog and Cat, 4th Edition"
+  }
+]
