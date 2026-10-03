@@ -6,25 +6,49 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-export default function DoctorPetProfile() {
+export default function DoctorPetProfile({ navigation, route }) {
+  const { consultation, pet: passedPet } = route.params || {};
 
   const pet = {
-    name: "Zara",
-    image: "https://images.dog.ceo/breeds/shih-tzu/n02086240_2550.jpg",
-    age: "3 Months",
-    weight: "2.5 Kg",
-    gender: "Female",
-    description: "Adorable Shih Tzu puppy with calm behavior.",
-    color: "Grey with Black",
+    name: consultation?.pet?.name || consultation?.petName || passedPet?.petName || "Luna",
+    image: consultation?.pet?.image || consultation?.petImage || "https://images.dog.ceo/breeds/retriever-golden/n02099601_3004.jpg",
+    age: consultation?.pet?.age || "2 Years",
+    weight: consultation?.pet?.weight || "24 Kg",
+    gender: consultation?.pet?.gender || "Female",
+    description: consultation?.pet?.description || "Healthy and active dog.",
+    color: consultation?.pet?.color || "Golden",
   };
 
   const owner = {
-    name: "Divakaran K",
-    phone: "+91 9876543210",
-    image: "https://randomuser.me/api/portraits/men/32.jpg",
+    name: consultation?.owner?.name || consultation?.owner?.username || "Pet Owner",
+    phone: consultation?.owner?.phone || "",
+    image: consultation?.owner?.image || consultation?.owner?.profileImage || null,
+  };
+
+  const handleCall = () => {
+    if (owner.phone) {
+      Linking.openURL(`tel:${owner.phone}`);
+    }
+  };
+
+  const handleChat = () => {
+    navigation.navigate("ChatsScreen", {
+      user: {
+        id: consultation?._id,
+        owner: owner.name,
+        pet: pet.name,
+        avatar: pet.image,
+        original: consultation,
+      },
+      consultationId: consultation?._id,
+      ownerId: consultation?.owner?._id || consultation?.owner,
+      phone: owner.phone,
+      fromScreen: "DoctorPetDetails",
+    });
   };
 
   return (
@@ -32,9 +56,16 @@ export default function DoctorPetProfile() {
 
       {/* HEADER IMAGE */}
       <View style={styles.topContainer}>
-        <Image source={{ uri: pet.image }} style={styles.topImage} />
+        <Image
+          source={
+            pet.image && (pet.image.startsWith("http") || pet.image.startsWith("data:"))
+              ? { uri: pet.image }
+              : require("../../../assets/images/dog1.png")
+          }
+          style={styles.topImage}
+        />
 
-        <TouchableOpacity style={styles.backBtn}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color="#4B0082" />
         </TouchableOpacity>
       </View>
@@ -81,12 +112,12 @@ export default function DoctorPetProfile() {
         {/* ACTION BUTTONS */}
         <View style={styles.bottomRow}>
 
-          <TouchableOpacity style={styles.callBtn}>
+          <TouchableOpacity style={styles.callBtn} onPress={handleCall}>
             <Ionicons name="call" size={18} color="#fff" />
             <Text style={styles.btnText}>Call Owner</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.chatBtn}>
+          <TouchableOpacity style={styles.chatBtn} onPress={handleChat}>
             <Ionicons name="chatbubble" size={18} color="#4B0082" />
             <Text style={styles.chatText}>Chat</Text>
           </TouchableOpacity>

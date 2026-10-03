@@ -14,6 +14,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BACKEND_URL } from "../services/api";
 
 const { width } = Dimensions.get("window");
 
@@ -31,7 +32,7 @@ export default function DoctorListScreen({ navigation }) {
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
-        const res = await fetch("http://172.20.10.4:8000/api/users");
+        const res = await fetch(`${BACKEND_URL}/api/users`);
         const data = await res.json();
         // Filter doctor role (data is array of users)
         const docs = data.filter((u) => u.role === "doctor" || !u.role);
@@ -67,9 +68,15 @@ export default function DoctorListScreen({ navigation }) {
           />
         )}
 
-        {/* TOP */}
         <View style={styles.topRow}>
-          <Image source={{ uri: item.image || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2" }} style={styles.image} />
+          <Image
+            source={
+              item.image || item.profileImage
+                ? { uri: item.image || item.profileImage }
+                : require("../../../assets/images/doctor.jpg")
+            }
+            style={styles.image}
+          />
 
           {/* PAW ICON ONLY */}
           <TouchableOpacity
@@ -160,10 +167,6 @@ export default function DoctorListScreen({ navigation }) {
             Best pet specialists nearby
           </Text>
         </View>
-
-        <TouchableOpacity style={styles.notificationBtn}>
-          <Ionicons name="notifications-outline" size={20} color={PRIMARY} />
-        </TouchableOpacity>
       </View>
 
       {/* HERO */}
@@ -208,7 +211,7 @@ export default function DoctorListScreen({ navigation }) {
       <FlatList
         data={filteredDoctors}
         renderItem={renderDoctor}
-        keyExtractor={(item) => item._id || item.id}
+        keyExtractor={(item, index) => item._id?.toString() || item.id?.toString() || String(index)}
         numColumns={2}
         columnWrapperStyle={{ justifyContent: "space-between" }}
         showsVerticalScrollIndicator={false}
@@ -235,16 +238,6 @@ const styles = StyleSheet.create({
   },
 
   backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 3,
-  },
-
-  notificationBtn: {
     width: 42,
     height: 42,
     borderRadius: 21,

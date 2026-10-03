@@ -19,6 +19,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 const { height, width } = Dimensions.get("window");
 
@@ -44,7 +45,14 @@ const STATUS_CONFIG = {
 
 const DoctorCard = React.memo(({ doctor, onPress }) => (
   <TouchableOpacity style={styles.card} onPress={() => onPress(doctor)} activeOpacity={0.7}>
-    <Image source={{ uri: doctor.image || "https://i.pravatar.cc/150?img=32" }} style={styles.image} />
+    <Image
+      source={
+        doctor.image || doctor.profileImage
+          ? { uri: doctor.image || doctor.profileImage }
+          : require("../../../assets/images/doctor.jpg")
+      }
+      style={styles.image}
+    />
     
     <View style={styles.info}>
       <Text style={styles.name} numberOfLines={1}>
@@ -77,7 +85,7 @@ const DoctorCard = React.memo(({ doctor, onPress }) => (
 ));
 
 export default function SelectDoctorScreen({ navigation, route }) {
-  const { photo, result } = route.params || {};
+  const { photo, base64Image, result, petId, petName } = route.params || {};
 
   const [doctors, setDoctors] = useState([]);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
@@ -91,7 +99,7 @@ export default function SelectDoctorScreen({ navigation, route }) {
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
-        const res = await fetch("http://172.20.10.4:8000/api/users");
+        const res = await fetch(`${BACKEND_URL}/api/users`);
         const data = await res.json();
         const docs = data.filter((u) => u.role === "doctor" || !u.role);
         setDoctors(docs);
@@ -136,15 +144,25 @@ export default function SelectDoctorScreen({ navigation, route }) {
     setIsLoading(true);
     try {
       const token = await AsyncStorage.getItem("token");
+      const storedActivePet = await AsyncStorage.getItem("activePet");
+      let fallbackPet = null;
+      if (storedActivePet) {
+        try { fallbackPet = JSON.parse(storedActivePet); } catch (_) {}
+      }
+
+      const finalPetId = petId || fallbackPet?._id || null;
+      const finalPetName = petName || fallbackPet?.name || "My Dog";
+      const finalPetImage = base64Image || photo || fallbackPet?.image || "";
       
       const payload = {
         doctorId: selectedDoctor._id,
-        petName: "My Dog",
-        petImage: photo || "",
+        petId: finalPetId,
+        petName: finalPetName,
+        petImage: finalPetImage,
         aiResult: result || {}
       };
 
-      const res = await fetch("http://172.20.10.4:8000/api/consultations", {
+      const res = await fetch(`${BACKEND_URL}/api/consultations`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -163,12 +181,9 @@ export default function SelectDoctorScreen({ navigation, route }) {
               text: "OK",
               onPress: () => {
                 closeSheet();
-                navigation.navigate("DoctorRequestSent", {
-                  doctor: selectedDoctor,
-                  petImage: photo,
-                  aiResult: result,
-                  status: "pending",
-                  timestamp: new Date().toISOString(),
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: "MainApp" }],
                 });
               },
             },
@@ -196,7 +211,7 @@ export default function SelectDoctorScreen({ navigation, route }) {
   ), []);
 
   const renderHeader = useCallback(() => (
-    <>
+    <View>
       {/* Hero Section */}
       <LinearGradient 
         colors={[COLORS.PRIMARY, COLORS.SECONDARY]} 
@@ -255,7 +270,7 @@ export default function SelectDoctorScreen({ navigation, route }) {
           {filteredDoctors.length} doctor{filteredDoctors.length !== 1 ? 's' : ''} available
         </Text>
       </View>
-    </>
+    </View>
   ), [result, search, filteredDoctors.length]);
 
   return (
@@ -281,7 +296,7 @@ export default function SelectDoctorScreen({ navigation, route }) {
       {/* Doctor List */}
       <FlatList
         data={filteredDoctors}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => item._id?.toString() || item.id?.toString() || String(index)}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={renderHeader}
@@ -315,7 +330,7 @@ export default function SelectDoctorScreen({ navigation, route }) {
           
           {selectedDoctor && (
             <View style={styles.sheetContent}>
-              <Image source={{ uri: selectedDoctor.image }} style={styles.avatar} />
+              <Image source={{ uri: selectedDoctor.image || selectedDoctor.profileImage || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2" }} style={styles.avatar} />
               
               <Text style={styles.docName}>{selectedDoctor.name}</Text>
               <Text style={styles.docSpec}>{selectedDoctor.specialty}</Text>

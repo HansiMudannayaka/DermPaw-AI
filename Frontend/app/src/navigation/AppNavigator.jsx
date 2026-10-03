@@ -27,6 +27,7 @@ import ArticleDetailsScreen from "../screens/ArticleDetailsScreen";
 /* PROFILE */
 import OwnerProfileScreen from "../screens/OwnerProfileScreen";
 import ManagePetsScreen from "../screens/ManagePetsScreen";
+import PetProfileScreen from "../screens/PetProfileScreen";
 
 /* 🐶 DOCTOR FLOW */
 import DoctorPetDetailsScreen from "../screens/DoctorPetDetailsScreen";
@@ -44,6 +45,7 @@ import AIResultDetail from "../screens/AIResultDetailScreen";
 import AIReviewList from "../screens/AIReviewListScreen";
 import AddReviewScreen from "../screens/AddReviewScreen";
 import SummaryScreen from "../screens/ReviewSummaryScreen";
+import DermPawAIAgent from "../screens/DermPawAIAgentScreen";
 
 /* 🩺 FIND DOCTORS */
 import FindDoctorScreen from "../screens/FindDoctorScreen";
@@ -99,6 +101,10 @@ export default function AppNavigator() {
         name="ManagePets"
         component={ManagePetsScreen}
       />
+      <Stack.Screen
+        name="PetProfile"
+        component={PetProfileScreen}
+      />
 
       {/* 🐶 DOCTOR FLOW */}
       <Stack.Screen
@@ -140,6 +146,10 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Summary"
         component={SummaryScreen}
+      />
+      <Stack.Screen
+        name="DermPawAIAgent"
+        component={DermPawAIAgent}
       />
 
       {/* 🩺 FIND DOCTORS */}

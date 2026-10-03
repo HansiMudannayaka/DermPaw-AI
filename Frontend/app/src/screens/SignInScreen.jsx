@@ -1,21 +1,21 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  Alert,
-  ActivityIndicator,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
 const isTablet = width >= 768;
@@ -51,7 +51,7 @@ export default function LoginScreen({ navigation }) {
 
       // ✅ API CALL (FIXED)
       const res = await fetch(
-        "http://172.20.10.4:8000/api/auth/login",
+        "http://192.168.1.6:8000/api/auth/login",
         {
           method: "POST",
           headers: {

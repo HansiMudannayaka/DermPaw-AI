@@ -104,14 +104,6 @@ export default function WelcomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
 
-      {/* BACK BUTTON */}
-      {/* <TouchableOpacity
-        style={styles.backBtn}
-        onPress={() => navigation.goBack()}
-      >
-        <Ionicons name="arrow-back" size={20} color="#710b9d" />
-      </TouchableOpacity>
-
       {/* SKIP BUTTON */}
       <TouchableOpacity
         style={styles.skipBtn}
@@ -128,7 +120,7 @@ export default function WelcomeScreen({ navigation }) {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => item.id?.toString() || String(index)}
         onScroll={onScroll}
         scrollEventThrottle={16}
       />

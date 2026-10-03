@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 const PRIMARY = "#3A0070";
 const BG = "#F4F5FA";
@@ -25,16 +26,18 @@ export default function SummaryScreen({ route, navigation }) {
     notes = "Large area of inflammation with moist lesions. Immediate treatment required.",
   } = route.params || {};
 
-  const petName = consultation?.petName || route.params?.petName || "Luna";
+  const petName = consultation?.pet?.name || consultation?.petName || route.params?.petName || "My Dog";
 
   let petImage = route.params?.petImage || require("../../../assets/images/dog1.png");
-  if (consultation?.petImage && consultation.petImage.startsWith("http")) {
+  if (consultation?.pet?.image && (consultation.pet.image.startsWith("http") || consultation.pet.image.startsWith("data:"))) {
+    petImage = { uri: consultation.pet.image };
+  } else if (consultation?.petImage && (consultation.petImage.startsWith("http") || consultation.petImage.startsWith("data:"))) {
     petImage = { uri: consultation.petImage };
   }
 
-  const breed = "Golden Retriever";
-  const age = "2Y";
-  const gender = "Female";
+  const breed = consultation?.pet?.description || consultation?.petBreed || "Dog";
+  const age = consultation?.pet?.age || "2Y";
+  const gender = consultation?.pet?.gender || "Female";
 
   const disease = consultation?.aiResult?.disease || route.params?.disease || "Skin Scan";
   const confidence = consultation?.aiResult?.confidence ? `${consultation.aiResult.confidence}%` : (route.params?.confidence || "92%");
@@ -44,7 +47,7 @@ export default function SummaryScreen({ route, navigation }) {
       const token = await AsyncStorage.getItem("token");
       const adviceText = `Diagnosis: ${diagnosis}\nSeverity: ${severity}\nRecommendations: ${recommendation}\nNotes: ${notes}`;
       
-      const res = await fetch(`http://172.20.10.4:8000/api/consultations/${consultation._id}`, {
+      const res = await fetch(`${BACKEND_URL}/api/consultations/${consultation._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -58,6 +61,10 @@ export default function SummaryScreen({ route, navigation }) {
       const data = await res.json();
       if (data.success) {
         setSubmitted(true);
+        // Auto navigate back to DoctorHome after 1.5s so reviewed case disappears from queue
+        setTimeout(() => {
+          navigation.navigate("DoctorHome");
+        }, 1500);
       } else {
         Alert.alert("Error", data.message || "Failed to submit review");
       }

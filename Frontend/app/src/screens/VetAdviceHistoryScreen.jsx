@@ -16,6 +16,7 @@ import {
 
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 /* ================= THEME ================= */
 
@@ -39,42 +40,70 @@ export default function AdviceHistoryScreen({
   navigation,
 }) {
   const [vetResponses, setVetResponses] = useState([]);
+  const [activePet, setActivePet] = useState(null);
 
-  // Fetch advice history (approved consultations) from backend
-  useEffect(() => {
-    const fetchAdviceHistory = async () => {
-      try {
-        const token = await AsyncStorage.getItem("token");
-        const res = await fetch("http://172.20.10.4:8000/api/consultations/owner", {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        if (data.success) {
-          const list = (data.consultations || [])
-            .filter(item => item.status === "approved")
-            .map(item => {
-              const d = new Date(item.updatedAt);
-              return {
-                id: item._id,
-                doctor: item.doctor?.name || "Doctor",
-                date: d.toLocaleDateString(),
-                time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                disease: item.aiResult?.disease || "Skin Scan",
-                severity: item.aiResult?.confidence > 85 ? "Severe" : item.aiResult?.confidence > 70 ? "Moderate" : "Mild",
-                image: item.doctor?.image || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2",
-                original: item
-              };
-            });
-          setVetResponses(list);
-        }
-      } catch (err) {
-        console.log("Error loading advice history:", err);
+  // Fetch advice history (approved consultations) from backend filtered by active pet
+  const fetchAdviceHistory = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const storedActivePet = await AsyncStorage.getItem("activePet");
+      let currentPet = null;
+      if (storedActivePet) {
+        currentPet = JSON.parse(storedActivePet);
+        setActivePet(currentPet);
       }
-    };
+
+      const url = currentPet?._id
+        ? `${BACKEND_URL}/api/consultations/owner?petId=${currentPet._id}&petName=${encodeURIComponent(currentPet.name || '')}`
+        : `${BACKEND_URL}/api/consultations/owner`;
+
+      const res = await fetch(url, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        const list = (data.consultations || [])
+          .filter(item => {
+            const isApproved = item.status === "approved";
+            if (!isApproved) return false;
+            if (!currentPet?._id) return true;
+            return (
+              item.pet === currentPet._id ||
+              item.pet?._id === currentPet._id ||
+              (item.petName && item.petName.toLowerCase() === currentPet.name?.toLowerCase())
+            );
+          })
+          .map(item => {
+            const d = new Date(item.updatedAt);
+            const isDocAvailable = Boolean(item.doctor && item.doctor.status !== "inactive");
+            return {
+              id: item._id,
+              doctor: item.doctor ? (item.doctor.name || item.doctor.username || "Doctor") : "Veterinarian",
+              isAvailable: isDocAvailable,
+              date: d.toLocaleDateString(),
+              time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              disease: item.aiResult?.disease || "Skin Scan",
+              severity: item.aiResult?.confidence > 85 ? "Severe" : item.aiResult?.confidence > 70 ? "Moderate" : "Mild",
+              image: item.doctor?.image || item.doctor?.profileImage || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2",
+              original: item
+            };
+          });
+        setVetResponses(list);
+      }
+    } catch (err) {
+      console.log("Error loading advice history:", err);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      fetchAdviceHistory();
+    });
     fetchAdviceHistory();
-  }, []);
+    return unsubscribe;
+  }, [navigation]);
 
   /* ================= SEVERITY COLORS ================= */
 
@@ -120,20 +149,35 @@ export default function AdviceHistoryScreen({
 
         {/* TITLE */}
 
-        <Text style={styles.title}>
-          Advice History
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>
+            Advice History
+          </Text>
+          {activePet && (
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2, gap: 4 }}>
+              <Ionicons name="paw" size={13} color={SECONDARY} />
+              <Text style={{ fontSize: 13, color: PRIMARY, fontWeight: "700" }}>
+                {activePet.name}'s Consultations
+              </Text>
+            </View>
+          )}
+        </View>
 
-        {/* NOTIFICATION */}
+        {/* PET PROFILE LINK */}
 
         <TouchableOpacity
           style={styles.notificationBtn}
+          onPress={() => navigation.navigate("PetProfile")}
         >
-          <Ionicons
-            name="notifications-outline"
-            size={20}
-            color={PRIMARY}
-          />
+          {activePet?.image ? (
+            <Image source={{ uri: activePet.image }} style={{ width: 34, height: 34, borderRadius: 17 }} />
+          ) : (
+            <Ionicons
+              name="paw"
+              size={20}
+              color={PRIMARY}
+            />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -141,7 +185,7 @@ export default function AdviceHistoryScreen({
 
       <FlatList
         data={vetResponses}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => item._id?.toString() || item.id?.toString() || String(index)}
         showsVerticalScrollIndicator={
           false
         }
@@ -187,13 +231,33 @@ export default function AdviceHistoryScreen({
               <View
                 style={styles.content}
               >
-                <Text
-                  style={
-                    styles.doctor
-                  }
-                >
-                  {item.doctor}
-                </Text>
+                <View style={styles.doctorHeaderRow}>
+                  <Text
+                    style={[
+                      styles.doctor,
+                      { flex: 1 },
+                      !item.isAvailable && { color: "#555" },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {item.doctor}
+                  </Text>
+                  <View
+                    style={[
+                      styles.availBadge,
+                      { backgroundColor: item.isAvailable ? "#DCFCE7" : "#FEE2E2" },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.availText,
+                        { color: item.isAvailable ? "#15803D" : "#B91C1C" },
+                      ]}
+                    >
+                      {item.isAvailable ? "Available" : "Unavailable"}
+                    </Text>
+                  </View>
+                </View>
 
                 <Text
                   style={
@@ -252,6 +316,19 @@ export default function AdviceHistoryScreen({
             </TouchableOpacity>
           );
         }}
+        ListEmptyComponent={() => (
+          <View style={{ alignItems: "center", justifyContent: "center", paddingTop: 80, paddingHorizontal: 30 }}>
+            <Ionicons name="medical-outline" size={60} color="#D8B4FE" />
+            <Text style={{ fontSize: 17, fontWeight: "bold", color: PRIMARY, marginTop: 16 }}>
+              {activePet ? `No advice history for ${activePet.name}` : "No Advice History"}
+            </Text>
+            <Text style={{ fontSize: 13, color: "#888", textAlign: "center", marginTop: 6, lineHeight: 18 }}>
+              {activePet
+                ? `When a veterinarian reviews a scan consultation for ${activePet.name}, their prescription and advice will appear here.`
+                : "When a veterinarian reviews your pet consultation, their prescription and advice will appear here."}
+            </Text>
+          </View>
+        )}
       />
     </SafeAreaView>
   );
@@ -350,6 +427,24 @@ const styles = StyleSheet.create({
 
   content: {
     flex: 1,
+  },
+
+  doctorHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
+  },
+
+  availBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+
+  availText: {
+    fontSize: 10,
+    fontWeight: "700",
   },
 
   doctor: {

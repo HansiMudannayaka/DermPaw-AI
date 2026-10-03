@@ -13,11 +13,13 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 const { width } = Dimensions.get("window");
 
 export default function HomeScreen({ navigation }) {
   const [userName, setUserName] = useState("User");
+  const [userAvatar, setUserAvatar] = useState(null);
   const [pets, setPets] = useState([]);
   const [scanModalVisible, setScanModalVisible] = useState(false);
 
@@ -28,7 +30,7 @@ export default function HomeScreen({ navigation }) {
         "You need to create a pet profile first before scanning.",
         [
           { text: "Cancel", style: "cancel" },
-          { text: "Create Profile", onPress: () => navigation.navigate("ManagePets") }
+          { text: "Create Profile", onPress: () => navigation.navigate("PetProfile") }
         ]
       );
     } else if (pets.length === 1) {
@@ -41,26 +43,41 @@ export default function HomeScreen({ navigation }) {
   /* =========================
      LOAD USER FROM STORAGE
   ========================= */
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const userData = await AsyncStorage.getItem("user");
+  const loadUser = async () => {
+    try {
+      const userData = await AsyncStorage.getItem("user");
+      const token = await AsyncStorage.getItem("token");
 
-        if (userData) {
-          const user = JSON.parse(userData);
-          if (user?.name) {
-            setUserName(user.name);
-          } else if (user?.username) {
-            setUserName(user.username);
+      if (userData) {
+        const user = JSON.parse(userData);
+        setUserName(user.name || user.username || "User");
+        const img = user.image || user.profileImage;
+        if (img) setUserAvatar(img);
+
+        // Fetch fresh user data from server for real-time image update
+        const uId = user._id || user.id;
+        if (uId && token) {
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/users/${uId}`, {
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+            const data = await res.json();
+            const freshUser = data.user || data;
+            if (freshUser && (freshUser._id || freshUser.id)) {
+              setUserName(freshUser.name || freshUser.username || user.name || "User");
+              const freshImg = freshUser.image || freshUser.profileImage;
+              if (freshImg) setUserAvatar(freshImg);
+              await AsyncStorage.setItem("user", JSON.stringify({ ...user, ...freshUser }));
+            }
+          } catch (e) {
+            // fallback to cached data silently
           }
         }
-      } catch (error) {
-        console.log("LOAD USER ERROR:", error);
       }
-    };
-
-    loadUser();
-  }, []);
+    } catch (error) {
+      console.log("LOAD USER ERROR:", error);
+    }
+  };
 
   /* =========================
      LOAD ALL PETS FROM BACKEND
@@ -68,7 +85,7 @@ export default function HomeScreen({ navigation }) {
   const fetchPets = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
-      const res = await fetch("http://172.20.10.4:8000/api/pets", {
+      const res = await fetch(`${BACKEND_URL}/api/pets`, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -86,12 +103,13 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
+      loadUser();
       fetchPets();
     });
     return unsubscribe;
   }, [navigation]);
 
-  // ✅ Quick Actions with navigation
+  // Quick Actions with navigation
   const actions = [
     { icon: "camera", label: "Scan Pet", screen: "GuideCamera" },
     { icon: "document-text", label: "Reports", screen: "Reports" },
@@ -106,7 +124,6 @@ export default function HomeScreen({ navigation }) {
         <View>
           <Text style={styles.greeting}>Hello {userName}👋</Text>
 
-          {/* 🔥 DYNAMIC NAME */}
           <Text style={styles.username}>
             Welcome to DermPaw AI
           </Text>
@@ -116,7 +133,11 @@ export default function HomeScreen({ navigation }) {
           style={styles.profileBtn}
           onPress={() => navigation.navigate("OwnerProfile")}
         >
-          <Ionicons name="paw" size={20} color="#fff" />
+          {userAvatar ? (
+            <Image source={{ uri: userAvatar }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+          ) : (
+            <Ionicons name="paw" size={20} color="#fff" />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -168,7 +189,7 @@ export default function HomeScreen({ navigation }) {
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 30, marginBottom: 12 }}>
         <Text style={{ fontSize: 16, fontWeight: "700", color: "#222" }}>Your Pets</Text>
         {pets.length > 0 && (
-          <TouchableOpacity onPress={() => navigation.navigate("ManagePets")}>
+          <TouchableOpacity onPress={() => navigation.navigate("PetProfile")}>
             <Text style={{ color: "#8A2BE2", fontWeight: "600", fontSize: 13 }}>Manage ›</Text>
           </TouchableOpacity>
         )}
@@ -181,7 +202,11 @@ export default function HomeScreen({ navigation }) {
               key={pet._id || idx}
               style={[styles.petCard, { marginRight: 15, minWidth: 240 }]}
               activeOpacity={0.8}
-              onPress={() => navigation.navigate("PetProfile")}
+              onPress={async () => {
+                await AsyncStorage.setItem("activePetId", pet._id);
+                await AsyncStorage.setItem("activePet", JSON.stringify(pet));
+                navigation.navigate("PetProfile", { petId: pet._id, pet });
+              }}
             >
               <Image
                 source={pet.image ? { uri: pet.image } : require("../../../assets/images/dog1.png")}
@@ -251,7 +276,7 @@ export default function HomeScreen({ navigation }) {
               style={styles.createProfileBtn}
               onPress={() => {
                 setScanModalVisible(false);
-                navigation.navigate("ManagePets");
+                navigation.navigate("PetProfile");
               }}
             >
               <Ionicons name="add-circle-outline" size={20} color="#fff" style={{ marginRight: 8 }} />

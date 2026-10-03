@@ -16,8 +16,9 @@ import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
-export default function PetProfile2({ navigation }) {
+export default function PetProfile2({ navigation, route }) {
   const [pets, setPets] = useState([]);
   const [selectedPet, setSelectedPet] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -33,8 +34,8 @@ export default function PetProfile2({ navigation }) {
   });
 
   const [owner, setOwner] = useState({
-    name: "Divakaran K",
-    image: "https://randomuser.me/api/portraits/men/32.jpg",
+    name: "Pet Owner",
+    image: null,
   });
 
   const fetchOwner = async () => {
@@ -43,8 +44,8 @@ export default function PetProfile2({ navigation }) {
       if (storedUser) {
         const user = JSON.parse(storedUser);
         setOwner({
-          name: user.name || user.username || "Kasun Perera",
-          image: user.profileImage || "https://randomuser.me/api/portraits/men/32.jpg",
+          name: user.name || user.username || "Pet Owner",
+          image: user.image || user.profileImage || null,
         });
       }
     } catch (err) {
@@ -65,22 +66,31 @@ export default function PetProfile2({ navigation }) {
   const fetchPets = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
-      const res = await fetch("http://172.20.10.4:8000/api/pets", {
+      const res = await fetch(`${BACKEND_URL}/api/pets`, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
       });
       const data = await res.json();
       if (data.success) {
-        setPets(data.pets || []);
-        if (data.pets && data.pets.length > 0) {
-          // Keep current selected pet if it still exists in the refreshed list
+        const list = data.pets || [];
+        setPets(list);
+        if (list.length > 0) {
+          // If route params specified a petId, select that pet first
+          if (route?.params?.petId) {
+            const target = list.find(p => p._id === route.params.petId);
+            if (target) {
+              setSelectedPet(target);
+              return;
+            }
+          }
+          // Otherwise keep current selected pet if it still exists in the refreshed list
           setSelectedPet(prev => {
             if (prev) {
-              const found = data.pets.find(p => p._id === prev._id);
+              const found = list.find(p => p._id === prev._id);
               if (found) return found;
             }
-            return data.pets[0];
+            return list[0];
           });
         }
       }
@@ -90,31 +100,49 @@ export default function PetProfile2({ navigation }) {
   };
 
   useEffect(() => {
+    if (route?.params?.petId && pets.length > 0) {
+      const found = pets.find(p => p._id === route.params.petId);
+      if (found) setSelectedPet(found);
+    } else if (route?.params?.pet) {
+      setSelectedPet(route.params.pet);
+    }
+  }, [route?.params?.petId, route?.params?.pet, pets]);
+
+  // Persist selected pet as active pet across the entire app
+  useEffect(() => {
+    if (selectedPet && selectedPet._id) {
+      AsyncStorage.setItem("activePetId", selectedPet._id);
+      AsyncStorage.setItem("activePet", JSON.stringify(selectedPet));
+    }
+  }, [selectedPet]);
+
+  useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       fetchPets();
       fetchOwner();
     });
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, route?.params?.petId]);
 
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 1,
+      quality: 0.5,
+      base64: true,
     });
 
     if (!result.canceled) {
-      const uri = result.assets[0].uri;
+      const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
       try {
         const token = await AsyncStorage.getItem("token");
-        const res = await fetch(`http://172.20.10.4:8000/api/pets/${selectedPet._id}`, {
+        const res = await fetch(`${BACKEND_URL}/api/pets/${selectedPet._id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
           },
-          body: JSON.stringify({ image: uri })
+          body: JSON.stringify({ image: base64Image })
         });
         const data = await res.json();
         if (data.success) {
@@ -147,11 +175,11 @@ export default function PetProfile2({ navigation }) {
 
     try {
       const token = await AsyncStorage.getItem("token");
-      let url = "http://172.20.10.4:8000/api/pets";
+      let url = `${BACKEND_URL}/api/pets`;
       let method = "POST";
 
       if (isEditing) {
-        url = `http://172.20.10.4:8000/api/pets/${selectedPet._id}`;
+        url = `${BACKEND_URL}/api/pets/${selectedPet._id}`;
         method = "PUT";
       }
 
@@ -217,7 +245,7 @@ export default function PetProfile2({ navigation }) {
         onPress: async () => {
           try {
             const token = await AsyncStorage.getItem("token");
-            const res = await fetch(`http://172.20.10.4:8000/api/pets/${selectedPet._id}`, {
+            const res = await fetch(`${BACKEND_URL}/api/pets/${selectedPet._id}`, {
               method: "DELETE",
               headers: {
                 "Authorization": `Bearer ${token}`
@@ -366,7 +394,13 @@ export default function PetProfile2({ navigation }) {
 
       {/* OWNER */}
       <View style={styles.ownerCard}>
-        <Image source={{ uri: owner.image }} style={styles.ownerImg} />
+        {owner.image ? (
+          <Image source={{ uri: owner.image }} style={styles.ownerImg} />
+        ) : (
+          <View style={[styles.ownerImg, { backgroundColor: "#8A2BE2", justifyContent: "center", alignItems: "center" }]}>
+            <Ionicons name="person" size={22} color="#fff" />
+          </View>
+        )}
 
         <View style={{ flex: 1 }}>
           <Text style={styles.ownerLabel}>Owned by</Text>

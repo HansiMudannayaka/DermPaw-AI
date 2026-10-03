@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 const PRIMARY = "#4B0082";
 const SECONDARY = "#8A2BE2";
@@ -29,58 +31,82 @@ export default function OwnerProfileScreen({ navigation }) {
 
   const [owner, setOwner] = useState({
     id: "",
-    name: "Kasun Perera",
-    email: "kasun@email.com",
-    phone: "0771234567",
-    location: "Negombo, Sri Lanka",
-    image: "https://i.pravatar.cc/300?img=12",
+    name: "Pet Owner",
+    email: "",
+    phone: "",
+    location: "",
+    image: null,
   });
 
   /* =========================
      LOAD OWNER DATA & STATS
   ========================= */
 
-  const loadOwnerData = async () => {
+  const loadOwnerData = useCallback(async () => {
     try {
       const storedUser = await AsyncStorage.getItem("user");
       const token = await AsyncStorage.getItem("token");
       if (storedUser) {
         const user = JSON.parse(storedUser);
+        const uId = user._id || user.id || "";
         setOwner({
-          id: user._id || "",
-          name: user.name || user.username || "Kasun Perera",
-          email: user.email || "kasun@email.com",
+          id: uId,
+          name: user.name || user.username || "Pet Owner",
+          email: user.email || "",
           phone: user.phone || "",
           location: user.location || "",
-          image: user.profileImage || "https://i.pravatar.cc/300?img=12",
+          image: user.image || user.profileImage || null,
         });
         
-        // Fetch counts
-        const headers = { "Authorization": `Bearer ${token}` };
+        const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+        
+        // Fetch fresh user data from server for real-time update
+        if (uId) {
+          try {
+            const resUser = await fetch(`${BACKEND_URL}/api/users/${uId}`, { headers });
+            const dataUser = await resUser.json();
+            const freshUser = dataUser.user || dataUser;
+            if (freshUser && (freshUser._id || freshUser.id)) {
+              setOwner(prev => ({
+                ...prev,
+                name: freshUser.name || freshUser.username || prev.name,
+                email: freshUser.email ?? prev.email,
+                phone: freshUser.phone ?? prev.phone,
+                location: freshUser.location ?? prev.location,
+                image: freshUser.image || freshUser.profileImage || prev.image,
+              }));
+              await AsyncStorage.setItem("user", JSON.stringify({ ...user, ...freshUser }));
+            }
+          } catch (e) {
+            console.log("Error fetching fresh user:", e);
+          }
+        }
         
         // Pets
-        const resPets = await fetch("http://172.20.10.4:8000/api/pets", { headers });
+        const resPets = await fetch(`${BACKEND_URL}/api/pets`, { headers });
         const dataPets = await resPets.json();
         if (dataPets.success) setPetCount(dataPets.pets?.length || 0);
 
         // Scans
-        const resScans = await fetch("http://172.20.10.4:8000/api/scans", { headers });
+        const resScans = await fetch(`${BACKEND_URL}/api/scans`, { headers });
         const dataScans = await resScans.json();
         if (dataScans.success) setReportCount(dataScans.scans?.length || 0);
 
         // Consultations
-        const resChats = await fetch("http://172.20.10.4:8000/api/consultations/owner", { headers });
+        const resChats = await fetch(`${BACKEND_URL}/api/consultations/owner`, { headers });
         const dataChats = await resChats.json();
         if (dataChats.success) setChatCount(dataChats.consultations?.length || 0);
       }
     } catch (err) {
       console.log("Error loading owner profile details:", err);
     }
-  };
-
-  useEffect(() => {
-    loadOwnerData();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadOwnerData();
+    }, [loadOwnerData])
+  );
 
   /* =========================
      IMAGE PERMISSION
@@ -111,13 +137,14 @@ export default function OwnerProfileScreen({ navigation }) {
       await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 1,
+        quality: 0.5,
+        base64: true,
       });
 
     if (!result.canceled) {
       setOwner({
         ...owner,
-        image: result.assets[0].uri,
+        image: `data:image/jpeg;base64,${result.assets[0].base64}`,
       });
     }
   };
@@ -129,7 +156,7 @@ export default function OwnerProfileScreen({ navigation }) {
   const handleSave = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
-      const res = await fetch(`http://172.20.10.4:8000/api/users/${owner.id}`, {
+      const res = await fetch(`${BACKEND_URL}/api/users/${owner.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -139,20 +166,23 @@ export default function OwnerProfileScreen({ navigation }) {
           name: owner.name,
           phone: owner.phone,
           location: owner.location,
+          image: owner.image,
           profileImage: owner.image
         })
       });
 
       const data = await res.json();
-      if (data && data._id) {
+      if (data && (data._id || data.success || data.user)) {
+        const updated = data.user || data;
         // Save back updated user to AsyncStorage
         const storedUser = await AsyncStorage.getItem("user");
         if (storedUser) {
           const userObj = JSON.parse(storedUser);
-          userObj.name = data.name;
-          userObj.phone = data.phone;
-          userObj.location = data.location;
-          userObj.profileImage = data.profileImage;
+          userObj.name = updated.name || owner.name;
+          userObj.phone = updated.phone || owner.phone;
+          userObj.location = updated.location || owner.location;
+          userObj.image = updated.image || owner.image;
+          userObj.profileImage = updated.profileImage || owner.image;
           await AsyncStorage.setItem("user", JSON.stringify(userObj));
         }
         
@@ -271,12 +301,25 @@ export default function OwnerProfileScreen({ navigation }) {
         <View style={styles.center}>
           <TouchableOpacity
             onPress={pickImage}
-            activeOpacity={0.8}
+            activeOpacity={isEditing ? 0.8 : 1}
+            style={styles.avatarTouchable}
           >
-            <Image
-              source={{ uri: owner.image }}
-              style={styles.avatar}
-            />
+            {owner.image ? (
+              <Image
+                source={{ uri: owner.image }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={54} color="#fff" />
+              </View>
+            )}
+
+            {isEditing && (
+              <View style={styles.cameraBadge}>
+                <Ionicons name="camera" size={16} color="#fff" />
+              </View>
+            )}
           </TouchableOpacity>
 
           <Text style={styles.name}>
@@ -324,7 +367,11 @@ export default function OwnerProfileScreen({ navigation }) {
           </Text>
         </View>
 
-        <View style={styles.statCard}>
+        <TouchableOpacity
+          style={styles.statCard}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate("VetAdviceHistory")}
+        >
           <Ionicons
             name="chatbubble"
             size={20}
@@ -338,7 +385,7 @@ export default function OwnerProfileScreen({ navigation }) {
           <Text style={styles.statLabel}>
             Chats
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* ================= INFO CARD ================= */}
@@ -521,12 +568,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  avatarTouchable: {
+    position: "relative",
+  },
+
   avatar: {
     width: 120,
     height: 120,
     borderRadius: 60,
 
     borderWidth: 3,
+    borderColor: "#fff",
+  },
+
+  avatarPlaceholder: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  cameraBadge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: PRIMARY,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
     borderColor: "#fff",
   },
 

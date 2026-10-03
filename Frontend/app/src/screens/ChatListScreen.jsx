@@ -10,11 +10,13 @@ import {
   StatusBar,
   RefreshControl,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { BACKEND_URL } from "../services/api";
 
 /* ================= CONSTANTS ================= */
 
@@ -29,133 +31,207 @@ const COLORS = {
   ONLINE: "#22C55E",
   OFFLINE: "#9CA3AF",
   SUCCESS: "#10B981",
-  WARNING: "#F59E0B",
 };
 
-const SORT_OPTIONS = {
-  RECENT: "recent",
+const FILTER_OPTIONS = {
+  ALL: "all",
+  READ: "read",
   UNREAD: "unread",
-  ONLINE: "online",
 };
 
-/* ================= DUMMY CHAT DATA ================= */
+const DEFAULT_PET_IMAGE = require("../../../assets/images/dog.png");
 
-const chats = [
-  {
-    id: "1",
-    owner: "Kasun Perera",
-    dog: "Golden Retriever",
-    message: "AI detected skin infection. What should I do?",
-    time: "2 min ago",
-    timestamp: new Date(Date.now() - 2 * 60000),
-    unread: 2,
-    online: true,
-    avatar: "https://i.pravatar.cc/150?img=5",
-    lastSeen: "Online",
-    isTyping: false,
-  },
-  {
-    id: "2",
-    owner: "Nimal Silva",
-    dog: "German Shepherd",
-    message: "My dog is not eating properly for 2 days",
-    time: "10 min ago",
-    timestamp: new Date(Date.now() - 10 * 60000),
-    unread: 1,
-    online: false,
-    avatar: "https://i.pravatar.cc/150?img=6",
-    lastSeen: "10 min ago",
-    isTyping: false,
-  },
-  {
-    id: "3",
-    owner: "Dinithi Fernando",
-    dog: "Pug",
-    message: "Can you check my dog's allergy?",
-    time: "30 min ago",
-    timestamp: new Date(Date.now() - 30 * 60000),
-    unread: 0,
-    online: true,
-    avatar: "https://i.pravatar.cc/150?img=8",
-    lastSeen: "Online",
-    isTyping: false,
-  },
-  {
-    id: "4",
-    owner: "Shehan Wijesinghe",
-    dog: "Beagle",
-    message: "My pet has ear infection symptoms",
-    time: "1 hour ago",
-    timestamp: new Date(Date.now() - 60 * 60000),
-    unread: 3,
-    online: false,
-    avatar: "https://i.pravatar.cc/150?img=12",
-    lastSeen: "1 hour ago",
-    isTyping: false,
-  },
-];
+/* ================= HELPER FUNCTIONS ================= */
 
-/* ================= CHAT ITEM COMPONENT ================= */
+const getId = (value) => {
+  if (!value) return null;
+
+  if (typeof value === "object") {
+    return (
+      value._id?.toString?.() ||
+      value.id?.toString?.() ||
+      null
+    );
+  }
+
+  return value.toString();
+};
+
+const getValidDate = (value) => {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatTime = (value) => {
+  const date = getValidDate(value);
+
+  if (!date) return "";
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatDate = (value) => {
+  const date = getValidDate(value);
+
+  if (!date) return "";
+
+  return date.toLocaleDateString();
+};
+
+const getImageSource = (partner, pet) => {
+  const profileImage =
+    partner?.profileImage ||
+    partner?.image;
+
+  const petImage = pet?.image;
+
+  if (
+    profileImage &&
+    typeof profileImage === "string" &&
+    profileImage.trim() !== ""
+  ) {
+    return {
+      uri: profileImage,
+    };
+  }
+
+  if (
+    petImage &&
+    typeof petImage === "string" &&
+    petImage.startsWith("http")
+  ) {
+    return {
+      uri: petImage,
+    };
+  }
+
+  return DEFAULT_PET_IMAGE;
+};
+
+const getOwnerId = (conversation) => {
+  return (
+    getId(conversation?.partner) ||
+    getId(conversation?.owner) ||
+    getId(conversation?.user)
+  );
+};
+
+const getConsultationId = (conversation) => {
+  return (
+    getId(conversation?.consultation) ||
+    getId(conversation?.consultationId)
+  );
+};
+
+const getOwnerName = (conversation) => {
+  return (
+    conversation?.partner?.name ||
+    conversation?.partner?.username ||
+    conversation?.owner?.name ||
+    conversation?.owner?.username ||
+    "Pet Owner"
+  );
+};
+
+/* ================= CHAT ITEM ================= */
 
 const ChatItem = React.memo(({ item, onPress }) => {
-  const [isTyping, setIsTyping] = useState(item.isTyping);
-
-  // Simulate typing indicator (for demo)
-  React.useEffect(() => {
-    if (item.online && !isTyping) {
-      const timer = setTimeout(() => setIsTyping(true), 30000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
   return (
     <TouchableOpacity
       activeOpacity={0.7}
-      style={styles.card}
+      style={[
+        styles.card,
+        item.unread > 0 && styles.unreadCard,
+      ]}
       onPress={() => onPress(item)}
     >
-      {/* Avatar Section */}
+      {/* Avatar */}
+
       <View style={styles.avatarContainer}>
-        <Image source={{ uri: item.avatar }} style={styles.avatar} />
-        <View style={[styles.onlineDot, { backgroundColor: item.online ? COLORS.ONLINE : COLORS.OFFLINE }]} />
+        <Image
+          source={item.avatar}
+          style={styles.avatar}
+        />
+
+        <View
+          style={[
+            styles.onlineDot,
+            {
+              backgroundColor: item.online
+                ? COLORS.ONLINE
+                : COLORS.OFFLINE,
+            },
+          ]}
+        />
       </View>
 
-      {/* Content Section */}
+      {/* Content */}
+
       <View style={styles.content}>
         <View style={styles.rowBetween}>
           <View style={styles.nameContainer}>
-            <Text style={styles.name}>{item.owner}</Text>
-            {item.online && <View style={styles.onlineIndicator} />}
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.name,
+                item.unread > 0 &&
+                  styles.unreadName,
+              ]}
+            >
+              {item.owner}
+            </Text>
+
+            {item.online && (
+              <View style={styles.onlineIndicator} />
+            )}
           </View>
-          <Text style={styles.time}>{item.time}</Text>
+
+          <Text style={styles.time}>
+            {item.time}
+          </Text>
         </View>
 
         <View style={styles.dogBadge}>
-          <MaterialCommunityIcons name="dog" size={12} color={COLORS.PRIMARY} />
-          <Text style={styles.dog}>{item.dog}</Text>
+          <MaterialCommunityIcons
+            name="dog"
+            size={12}
+            color={COLORS.PRIMARY}
+          />
+
+          <Text
+            numberOfLines={1}
+            style={styles.dog}
+          >
+            {item.dog}
+          </Text>
         </View>
 
         <View style={styles.bottomRow}>
-          {isTyping ? (
-            <View style={styles.typingContainer}>
-              <Text style={styles.typingText}>typing</Text>
-              <View style={styles.typingDot}>
-                <View style={styles.typingDotInner} />
-              </View>
-            </View>
-          ) : (
-            <>
-              <Text numberOfLines={1} style={styles.message}>
-                {item.message}
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.message,
+              item.unread > 0 &&
+                styles.unreadMessage,
+            ]}
+          >
+            {item.message}
+          </Text>
+
+          {item.unread > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {item.unread > 9
+                  ? "9+"
+                  : item.unread}
               </Text>
-              {item.unread > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {item.unread > 9 ? "9+" : item.unread}
-                  </Text>
-                </View>
-              )}
-            </>
+            </View>
           )}
         </View>
       </View>
@@ -163,46 +239,128 @@ const ChatItem = React.memo(({ item, onPress }) => {
   );
 });
 
-/* ================= FILTER MODAL COMPONENT ================= */
+/* ================= FILTER MODAL ================= */
 
-const FilterModal = ({ visible, onClose, onApply, currentSort }) => {
+const FilterModal = ({
+  visible,
+  onClose,
+  onApply,
+  currentFilter,
+}) => {
   if (!visible) return null;
 
   return (
     <View style={styles.modalOverlay}>
       <View style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Filter Chats</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={COLORS.TEXT_PRIMARY} />
+          <Text style={styles.modalTitle}>
+            Filter Chats
+          </Text>
+
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="close"
+              size={24}
+              color={COLORS.TEXT_PRIMARY}
+            />
           </TouchableOpacity>
         </View>
 
-        {Object.values(SORT_OPTIONS).map((option) => (
-          <TouchableOpacity
-            key={option}
-            style={styles.filterOption}
-            onPress={() => onApply(option)}
-          >
-            <View style={styles.filterOptionLeft}>
-              {option === SORT_OPTIONS.RECENT && (
-                <Ionicons name="time-outline" size={20} color={COLORS.PRIMARY} />
-              )}
-              {option === SORT_OPTIONS.UNREAD && (
-                <Ionicons name="mail-unread-outline" size={20} color={COLORS.PRIMARY} />
-              )}
-              {option === SORT_OPTIONS.ONLINE && (
-                <Ionicons name="people-outline" size={20} color={COLORS.PRIMARY} />
-              )}
-              <Text style={styles.filterOptionText}>
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </Text>
-            </View>
-            {currentSort === option && (
-              <Ionicons name="checkmark-circle" size={20} color={COLORS.SUCCESS} />
-            )}
-          </TouchableOpacity>
-        ))}
+        {/* ALL */}
+
+        <TouchableOpacity
+          style={styles.filterOption}
+          onPress={() =>
+            onApply(FILTER_OPTIONS.ALL)
+          }
+          activeOpacity={0.7}
+        >
+          <View style={styles.filterOptionLeft}>
+            <Ionicons
+              name="chatbubbles-outline"
+              size={20}
+              color={COLORS.PRIMARY}
+            />
+
+            <Text style={styles.filterOptionText}>
+              All
+            </Text>
+          </View>
+
+          {currentFilter ===
+            FILTER_OPTIONS.ALL && (
+            <Ionicons
+              name="checkmark-circle"
+              size={20}
+              color={COLORS.SUCCESS}
+            />
+          )}
+        </TouchableOpacity>
+
+        {/* READ */}
+
+        <TouchableOpacity
+          style={styles.filterOption}
+          onPress={() =>
+            onApply(FILTER_OPTIONS.READ)
+          }
+          activeOpacity={0.7}
+        >
+          <View style={styles.filterOptionLeft}>
+            <Ionicons
+              name="mail-open-outline"
+              size={20}
+              color={COLORS.PRIMARY}
+            />
+
+            <Text style={styles.filterOptionText}>
+              Read
+            </Text>
+          </View>
+
+          {currentFilter ===
+            FILTER_OPTIONS.READ && (
+            <Ionicons
+              name="checkmark-circle"
+              size={20}
+              color={COLORS.SUCCESS}
+            />
+          )}
+        </TouchableOpacity>
+
+        {/* UNREAD */}
+
+        <TouchableOpacity
+          style={styles.filterOption}
+          onPress={() =>
+            onApply(FILTER_OPTIONS.UNREAD)
+          }
+          activeOpacity={0.7}
+        >
+          <View style={styles.filterOptionLeft}>
+            <Ionicons
+              name="mail-unread-outline"
+              size={20}
+              color={COLORS.PRIMARY}
+            />
+
+            <Text style={styles.filterOptionText}>
+              Unread
+            </Text>
+          </View>
+
+          {currentFilter ===
+            FILTER_OPTIONS.UNREAD && (
+            <Ionicons
+              name="checkmark-circle"
+              size={20}
+              color={COLORS.SUCCESS}
+            />
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -210,234 +368,730 @@ const FilterModal = ({ visible, onClose, onApply, currentSort }) => {
 
 /* ================= MAIN COMPONENT ================= */
 
-export default function ChatListScreen({ navigation }) {
+export default function ChatListScreen({
+  navigation,
+}) {
   const [search, setSearch] = useState("");
-  const [chatData, setChatData] = useState(chats);
-  const [refreshing, setRefreshing] = useState(false);
-  const [sortBy, setSortBy] = useState(SORT_OPTIONS.RECENT);
-  const [showFilter, setShowFilter] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [chatData, setChatData] = useState([]);
+  const [refreshing, setRefreshing] =
+    useState(false);
 
-  // Refresh data when screen comes into focus
+  const [filterBy, setFilterBy] = useState(
+    FILTER_OPTIONS.ALL
+  );
+
+  const [showFilter, setShowFilter] =
+    useState(false);
+
+  const [isLoading, setIsLoading] =
+    useState(false);
+
+  /* ================= FETCH REAL CHATS ================= */
+
+  const fetchLatestChats = useCallback(
+    async () => {
+      setIsLoading(true);
+
+      try {
+        const token =
+          await AsyncStorage.getItem("token");
+
+        if (!token) {
+          setChatData([]);
+          return;
+        }
+
+        const response = await fetch(
+          `${BACKEND_URL}/api/chat/conversations`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        let data;
+
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
+
+        if (
+          !response.ok ||
+          !data?.success ||
+          !Array.isArray(data?.conversations)
+        ) {
+          setChatData([]);
+          return;
+        }
+
+        /*
+         * IMPORTANT:
+         * Only real backend conversations are used.
+         *
+         * No consultation is converted into
+         * a fake chat.
+         *
+         * No fake unread count.
+         *
+         * No fake online status.
+         *
+         * No fake typing status.
+         */
+
+        const realChats =
+          data.conversations
+            .map((conversation) => {
+              const ownerId =
+                getOwnerId(conversation);
+
+              if (!ownerId) {
+                return null;
+              }
+
+              const consultation =
+                conversation?.consultation ||
+                null;
+
+              const consultationId =
+                getConsultationId(
+                  conversation
+                );
+
+              const partner =
+                conversation?.partner ||
+                {};
+
+              const pet =
+                consultation?.pet ||
+                null;
+
+              const petName =
+                pet?.name ||
+                consultation?.petName ||
+                "";
+
+              const lastMessage =
+                conversation?.lastMessage ||
+                null;
+
+              const message =
+                typeof lastMessage?.text ===
+                "string"
+                  ? lastMessage.text
+                  : "Chat started";
+
+              const messageDate =
+                getValidDate(
+                  lastMessage?.createdAt
+                ) ||
+                getValidDate(
+                  conversation?.updatedAt
+                ) ||
+                getValidDate(
+                  conversation?.createdAt
+                );
+
+              /*
+               * UNREAD COUNT
+               *
+               * Comes ONLY from backend.
+               */
+              const backendUnread =
+                Number(
+                  conversation?.unreadCount
+                );
+
+              const unread =
+                Number.isFinite(
+                  backendUnread
+                ) &&
+                backendUnread > 0
+                  ? backendUnread
+                  : 0;
+
+              /*
+               * ONLINE STATUS
+               *
+               * Comes ONLY from backend.
+               *
+               * If backend does not provide
+               * online status, it is false.
+               */
+              const online =
+                partner?.online === true ||
+                partner?.isOnline === true;
+
+              return {
+                id:
+                  getId(conversation) ||
+                  `${ownerId}_conversation`,
+
+                ownerId,
+
+                consultationId:
+                  consultationId || null,
+
+                owner:
+                  getOwnerName(conversation),
+
+                ownerName:
+                  getOwnerName(conversation),
+
+                pets: petName
+                  ? [petName]
+                  : [],
+
+                dog:
+                  petName || "Pet",
+
+                message,
+
+                time:
+                  formatTime(messageDate),
+
+                timestamp:
+                  messageDate ||
+                  new Date(0),
+
+                unread,
+
+                online,
+
+                avatar:
+                  getImageSource(
+                    partner,
+                    pet
+                  ),
+
+                lastSeen:
+                  messageDate
+                    ? formatDate(
+                        messageDate
+                      )
+                    : "",
+
+                phone:
+                  partner?.phone ||
+                  null,
+
+                original:
+                  conversation,
+              };
+            })
+            .filter(Boolean)
+            .sort(
+              (a, b) =>
+                b.timestamp.getTime() -
+                a.timestamp.getTime()
+            );
+
+        setChatData(realChats);
+      } catch (error) {
+        
+
+        setChatData([]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  /* ================= SCREEN FOCUS ================= */
+
   useFocusEffect(
     useCallback(() => {
       fetchLatestChats();
-      return () => {
-        // Cleanup if needed
-      };
-    }, [])
+    }, [fetchLatestChats])
   );
 
-  const fetchLatestChats = async () => {
-    // Simulate API call to fetch latest chats
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-    setChatData(chats); // In real app, update with actual data
-    setIsLoading(false);
-  };
+  /* ================= REFRESH ================= */
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchLatestChats();
-    setRefreshing(false);
-  }, []);
+  const onRefresh = useCallback(
+    async () => {
+      setRefreshing(true);
 
-  // Filter and sort chats
-  const filteredAndSortedChats = useMemo(() => {
-    let filtered = chatData.filter((item) => {
-      const text = search.toLowerCase();
-      return (
-        item.owner.toLowerCase().includes(text) ||
-        item.dog.toLowerCase().includes(text)
-      );
-    });
+      try {
+        await fetchLatestChats();
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [fetchLatestChats]
+  );
 
-    // Apply sorting
-    switch (sortBy) {
-      case SORT_OPTIONS.UNREAD:
-        filtered = filtered.sort((a, b) => b.unread - a.unread);
-        break;
-      case SORT_OPTIONS.ONLINE:
-        filtered = filtered.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
-        break;
-      case SORT_OPTIONS.RECENT:
-      default:
-        filtered = filtered.sort((a, b) => b.timestamp - a.timestamp);
-        break;
-    }
+  /* ================= SEARCH + FILTER ================= */
 
-    return filtered;
-  }, [chatData, search, sortBy]);
+  const filteredChats = useMemo(() => {
+    const searchText =
+      search.trim().toLowerCase();
 
-  const handleChatPress = useCallback((chat) => {
-    // Mark as read when opening chat
-    setChatData(prevData =>
-      prevData.map(item =>
-        item.id === chat.id ? { ...item, unread: 0 } : item
-      )
+    const filtered = chatData.filter(
+      (item) => {
+        const owner = String(
+          item.owner || ""
+        ).toLowerCase();
+
+        const dog = String(
+          item.dog || ""
+        ).toLowerCase();
+
+        const message = String(
+          item.message || ""
+        ).toLowerCase();
+
+        const matchesSearch =
+          !searchText ||
+          owner.includes(searchText) ||
+          dog.includes(searchText) ||
+          message.includes(searchText);
+
+        if (!matchesSearch) {
+          return false;
+        }
+
+        /* ALL */
+
+        if (
+          filterBy ===
+          FILTER_OPTIONS.ALL
+        ) {
+          return true;
+        }
+
+        /* READ */
+
+        if (
+          filterBy ===
+          FILTER_OPTIONS.READ
+        ) {
+          return item.unread === 0;
+        }
+
+        /* UNREAD */
+
+        if (
+          filterBy ===
+          FILTER_OPTIONS.UNREAD
+        ) {
+          return item.unread > 0;
+        }
+
+        return true;
+      }
     );
-    
-    navigation.navigate("ChatsScreen", { 
-      user: chat,
-      fromScreen: "ChatList"
-    });
-  }, [navigation]);
 
-  const handleFilterApply = useCallback((sortOption) => {
-    setSortBy(sortOption);
-    setShowFilter(false);
-  }, []);
+    /*
+     * Always show latest real conversation first.
+     */
+    return [...filtered].sort(
+      (a, b) =>
+        b.timestamp.getTime() -
+        a.timestamp.getTime()
+    );
+  }, [
+    chatData,
+    search,
+    filterBy,
+  ]);
 
-  const handleClearSearch = useCallback(() => {
-    setSearch("");
-  }, []);
+  /* ================= OPEN CHAT ================= */
 
-  const getTotalUnreadCount = useMemo(() => {
-    return chatData.reduce((total, chat) => total + chat.unread, 0);
+  const handleChatPress =
+    useCallback(
+      (chat) => {
+        /*
+         * Update local UI immediately.
+         *
+         * IMPORTANT:
+         * This does NOT create fake backend
+         * read status.
+         */
+        setChatData((previous) =>
+          previous.map((item) =>
+            item.id === chat.id
+              ? {
+                  ...item,
+                  unread: 0,
+                }
+              : item
+          )
+        );
+
+        navigation.navigate(
+          "ChatsScreen",
+          {
+            user: chat,
+
+            /*
+             * REAL CONSULTATION ID
+             */
+            consultationId:
+              chat.consultationId ||
+              null,
+
+            /*
+             * REAL OWNER ID
+             */
+            ownerId:
+              chat.ownerId ||
+              null,
+
+            fromScreen:
+              "ChatList",
+          }
+        );
+      },
+      [navigation]
+    );
+
+  /* ================= FILTER ================= */
+
+  const handleFilterApply =
+    useCallback(
+      (filterOption) => {
+        setFilterBy(filterOption);
+        setShowFilter(false);
+      },
+      []
+    );
+
+  /* ================= CLEAR SEARCH ================= */
+
+  const handleClearSearch =
+    useCallback(() => {
+      setSearch("");
+    }, []);
+
+  /* ================= TOTAL UNREAD ================= */
+
+  const totalUnreadCount = useMemo(() => {
+    return chatData.reduce(
+      (total, chat) =>
+        total +
+        (Number(chat.unread) || 0),
+      0
+    );
   }, [chatData]);
 
-  const renderEmptyState = useCallback(() => (
-    <View style={styles.emptyState}>
-      <MaterialCommunityIcons name="chat-outline" size={64} color={COLORS.TEXT_LIGHT} />
-      <Text style={styles.emptyStateTitle}>No messages yet</Text>
-      <Text style={styles.emptyStateText}>
-        When pet owners reach out, their messages will appear here
-      </Text>
-    </View>
-  ), []);
+  /* ================= EMPTY STATE ================= */
 
-  const renderHeader = useCallback(() => (
-    <>
-      {/* Hero Card */}
-      <LinearGradient
-        colors={[COLORS.PRIMARY, COLORS.SECONDARY]}
-        style={styles.heroCard}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <View style={styles.heroContent}>
-          <Text style={styles.heroTitle}>Pet Consultation Chats</Text>
-          <Text style={styles.heroDesc}>
-            Respond to pet owners and help them with expert medical advice
+  const renderEmptyState =
+    useCallback(
+      () => (
+        <View style={styles.emptyState}>
+          <MaterialCommunityIcons
+            name="chat-outline"
+            size={64}
+            color={COLORS.TEXT_LIGHT}
+          />
+
+          <Text
+            style={styles.emptyStateTitle}
+          >
+            No messages yet
           </Text>
-          {getTotalUnreadCount > 0 && (
-            <View style={styles.unreadSummary}>
-              <Text style={styles.unreadSummaryText}>
-                {getTotalUnreadCount} unread message{getTotalUnreadCount !== 1 ? 's' : ''}
+
+          <Text
+            style={styles.emptyStateText}
+          >
+            When pet owners reach out, their messages will appear here
+          </Text>
+        </View>
+      ),
+      []
+    );
+
+  /* ================= HEADER ================= */
+
+  const renderHeader =
+    useCallback(
+      () => (
+        <View>
+          {/* Hero Card */}
+
+          <LinearGradient
+            colors={[
+              COLORS.PRIMARY,
+              COLORS.SECONDARY,
+            ]}
+            style={styles.heroCard}
+            start={{
+              x: 0,
+              y: 0,
+            }}
+            end={{
+              x: 1,
+              y: 1,
+            }}
+          >
+            <View
+              style={styles.heroContent}
+            >
+              <Text
+                style={styles.heroTitle}
+              >
+                Pet Consultation Chats
               </Text>
+
+              <Text
+                style={styles.heroDesc}
+              >
+                Respond to pet owners and help them with expert medical advice
+              </Text>
+
+              {totalUnreadCount > 0 && (
+                <View
+                  style={
+                    styles.unreadSummary
+                  }
+                >
+                  <Text
+                    style={
+                      styles.unreadSummaryText
+                    }
+                  >
+                    {totalUnreadCount} unread
+                    message
+                    {totalUnreadCount !== 1
+                      ? "s"
+                      : ""}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <MaterialCommunityIcons
+              name="chat-processing"
+              size={65}
+              color="rgba(255,255,255,0.15)"
+            />
+          </LinearGradient>
+
+          {/* Search + Filter */}
+
+          <View
+            style={styles.searchSection}
+          >
+            <View
+              style={styles.searchBox}
+            >
+              <Ionicons
+                name="search"
+                size={18}
+                color={COLORS.TEXT_LIGHT}
+              />
+
+              <TextInput
+                placeholder="Search owners or dogs..."
+                placeholderTextColor={
+                  COLORS.TEXT_LIGHT
+                }
+                value={search}
+                onChangeText={setSearch}
+                style={styles.input}
+                returnKeyType="search"
+              />
+
+              {search.length > 0 && (
+                <TouchableOpacity
+                  onPress={
+                    handleClearSearch
+                  }
+                  hitSlop={{
+                    top: 10,
+                    bottom: 10,
+                    left: 10,
+                    right: 10,
+                  }}
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color={
+                      COLORS.TEXT_LIGHT
+                    }
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.filterBtn}
+              onPress={() =>
+                setShowFilter(true)
+              }
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="options-outline"
+                size={20}
+                color={COLORS.PRIMARY}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Filter Indicator */}
+
+          {filterBy !==
+            FILTER_OPTIONS.ALL && (
+            <View
+              style={styles.sortIndicator}
+            >
+              <Text
+                style={
+                  styles.sortIndicatorText
+                }
+              >
+                Filtered by:{" "}
+                {filterBy
+                  .charAt(0)
+                  .toUpperCase() +
+                  filterBy.slice(1)}
+              </Text>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setFilterBy(
+                    FILTER_OPTIONS.ALL
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.sortResetText
+                  }
+                >
+                  Reset
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
+      ),
+      [
+        search,
+        totalUnreadCount,
+        filterBy,
+        handleClearSearch,
+      ]
+    );
 
-        <MaterialCommunityIcons
-          name="chat-processing"
-          size={65}
-          color="rgba(255,255,255,0.15)"
-        />
-      </LinearGradient>
-
-      {/* Search and Filter Bar */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={COLORS.TEXT_LIGHT} />
-          <TextInput
-            placeholder="Search owners or dogs..."
-            placeholderTextColor={COLORS.TEXT_LIGHT}
-            value={search}
-            onChangeText={setSearch}
-            style={styles.input}
-            returnKeyType="search"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={handleClearSearch} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close-circle" size={18} color={COLORS.TEXT_LIGHT} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <TouchableOpacity 
-          style={styles.filterBtn} 
-          onPress={() => setShowFilter(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="options-outline" size={20} color={COLORS.PRIMARY} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Sort Indicator */}
-      {sortBy !== SORT_OPTIONS.RECENT && (
-        <View style={styles.sortIndicator}>
-          <Text style={styles.sortIndicatorText}>
-            Sorted by: {sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}
-          </Text>
-          <TouchableOpacity onPress={() => setSortBy(SORT_OPTIONS.RECENT)}>
-            <Text style={styles.sortResetText}>Reset</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </>
-  ), [search, getTotalUnreadCount, sortBy, handleClearSearch]);
+  /* ================= SCREEN ================= */
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.BG} />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={COLORS.BG}
+      />
 
       {/* Header */}
+
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={() =>
+            navigation.goBack()
+          }
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={20} color={COLORS.TEXT_PRIMARY} />
+          <Ionicons
+            name="arrow-back"
+            size={20}
+            color={COLORS.TEXT_PRIMARY}
+          />
         </TouchableOpacity>
 
         <View>
-          <Text style={styles.title}>Messages</Text>
-          <Text style={styles.subtitle}>Chat Support</Text>
-        </View>
+          <Text style={styles.title}>
+            Messages
+          </Text>
 
-        <TouchableOpacity 
-          style={styles.iconBtn}
-          onPress={() => navigation.navigate("Notifications")}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="notifications-outline" size={20} color="#fff" />
-          {getTotalUnreadCount > 0 && <View style={styles.notificationBadge} />}
-        </TouchableOpacity>
+          <Text
+            style={styles.subtitle}
+          >
+            Chat Support
+          </Text>
+        </View>
       </View>
 
       {/* Main Content */}
+
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.PRIMARY} />
+        <View
+          style={
+            styles.loadingContainer
+          }
+        >
+          <ActivityIndicator
+            size="large"
+            color={COLORS.PRIMARY}
+          />
         </View>
       ) : (
         <FlatList
-          data={filteredAndSortedChats}
-          keyExtractor={(item) => item.id}
+          data={filteredChats}
+          keyExtractor={(item) =>
+            item.id.toString()
+          }
           renderItem={({ item }) => (
-            <ChatItem item={item} onPress={handleChatPress} />
+            <ChatItem
+              item={item}
+              onPress={
+                handleChatPress
+              }
+            />
           )}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={renderHeader}
-          ListEmptyComponent={renderEmptyState}
+          showsVerticalScrollIndicator={
+            false
+          }
+          contentContainerStyle={
+            styles.listContent
+          }
+          ListHeaderComponent={
+            renderHeader
+          }
+          ListEmptyComponent={
+            renderEmptyState
+          }
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={
+                COLORS.PRIMARY
+              }
+              colors={[
+                COLORS.PRIMARY,
+              ]}
+            />
           }
           initialNumToRender={8}
           maxToRenderPerBatch={5}
           windowSize={5}
+          removeClippedSubviews
         />
       )}
 
       {/* Filter Modal */}
+
       <FilterModal
         visible={showFilter}
-        onClose={() => setShowFilter(false)}
-        onApply={handleFilterApply}
-        currentSort={sortBy}
+        onClose={() =>
+          setShowFilter(false)
+        }
+        onApply={
+          handleFilterApply
+        }
+        currentFilter={
+          filterBy
+        }
       />
     </View>
   );
@@ -455,7 +1109,6 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
   },
@@ -472,26 +1125,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.PRIMARY,
-    justifyContent: "center",
-    alignItems: "center",
-    position: "relative",
-  },
-
-  notificationBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.WARNING,
-  },
-
   backBtn: {
     width: 44,
     height: 44,
@@ -499,8 +1132,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.CARD,
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -513,7 +1150,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 18,
     shadowColor: COLORS.PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 5,
@@ -539,7 +1179,8 @@ const styles = StyleSheet.create({
 
   unreadSummary: {
     marginTop: 12,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor:
+      "rgba(255,255,255,0.2)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -568,7 +1209,10 @@ const styles = StyleSheet.create({
     height: 52,
     elevation: 2,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.05,
     shadowRadius: 2,
   },
@@ -588,6 +1232,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
 
   sortIndicator: {
@@ -622,9 +1273,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.05,
     shadowRadius: 3,
+  },
+
+  unreadCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.PRIMARY,
   },
 
   avatarContainer: {
@@ -664,12 +1323,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    flex: 1,
+    paddingRight: 8,
   },
 
   name: {
     fontWeight: "800",
     fontSize: 15,
     color: COLORS.TEXT_PRIMARY,
+    flexShrink: 1,
+  },
+
+  unreadName: {
+    fontWeight: "900",
   },
 
   onlineIndicator: {
@@ -695,6 +1361,14 @@ const styles = StyleSheet.create({
     color: COLORS.PRIMARY,
     fontSize: 12,
     fontWeight: "600",
+    flexShrink: 1,
+  },
+
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 22,
   },
 
   message: {
@@ -704,10 +1378,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  bottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  unreadMessage: {
+    color: COLORS.TEXT_PRIMARY,
+    fontWeight: "600",
   },
 
   badge: {
@@ -724,34 +1397,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 11,
     fontWeight: "700",
-  },
-
-  typingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  typingText: {
-    color: COLORS.PRIMARY,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-
-  typingDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.PRIMARY + "20",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  typingDotInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.PRIMARY,
   },
 
   emptyState: {
@@ -788,7 +1433,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor:
+      "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -818,7 +1464,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.BG,
   },
