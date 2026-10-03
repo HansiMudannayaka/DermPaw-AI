@@ -1,242 +1,18138 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import numpy as np
-import tensorflow as tf
-import scipy.spatial.distance
-import cv2
+# ============================================================
+
+
+
+
+
+
+
+# DERMPAW AI
+
+
+
+
+
+
+
+# E3 MobileNetV2 + Original DermPaw Rejection Logic
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
-from PIL import Image, ImageOps
-from tensorflow.keras.applications.resnet50 import preprocess_input
+
+
+
+
+
+
+
+import io
+
+
+
+
+
+
+
+import math
+import traceback
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+
+
+
+
+
+
+
+import tensorflow as tf
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from flask import Flask, request, jsonify
+
+
+
+
+
+
+
+from flask_cors import CORS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from tensorflow.keras.applications import MobileNetV2
+
+
+
+
+
+
+
 from tensorflow.keras.applications.mobilenet_v2 import (
-    preprocess_input as mobilenet_preprocess,
-    decode_predictions
+
+
+
+
+
+
+
+    preprocess_input as mobilenet_preprocess
+
+
+
+
+
+
+
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 1. FLASK
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 app = Flask(__name__)
+
+
+
+
+
+
+
 CORS(app)
 
-# ── Paths ────────────────────────────────────────────────────────────────
-MODEL_PATH = "resnet50_best.keras"
-OOD_DIR    = "ood_references"
-CLASSES    = ["demodicosis", "dermatitis", "ringworm", "healthy"]
 
-DISEASE_INFO = {
-    "demodicosis": {
-        "full_name"  : "Demodicosis (Demodectic Mange)",
-        "description": "Caused by Demodex mites. Leads to hair loss and skin irritation.",
-        "severity"   : "Moderate",
-        "color"      : "#FF9800"
-    },
-    "dermatitis": {
-        "full_name"  : "Dermatitis",
-        "description": "Inflammation of the skin due to allergies, infections, or irritants.",
-        "severity"   : "Moderate",
-        "color"      : "#F44336"
-    },
-    "ringworm": {
-        "full_name"  : "Ringworm (Dermatophytosis)",
-        "description": "Contagious fungal infection causing circular, scaly bald patches.",
-        "severity"   : "High",
-        "color"      : "#E91E63"
-    },
-    "healthy": {
-        "full_name"  : "Healthy Skin",
-        "description": "No skin disease detected. Your dog's skin appears healthy.",
-        "severity"   : "None",
-        "color"      : "#4CAF50"
-    }
-}
 
-# ── Load everything on startup ───────────────────────────────────────────
-print("Loading ResNet50 model...")
-best_model = tf.keras.models.load_model(MODEL_PATH)
-embedding_model = tf.keras.Model(
-    inputs=best_model.input,
-    outputs=best_model.layers[2].output
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 2. PATHS
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BASE_DIR = os.path.dirname(
+
+
+
+
+
+
+
+    os.path.abspath(__file__)
+
+
+
+
+
+
+
 )
 
-print("Loading MobileNetV2 dog detector...")
-dog_detector = MobileNetV2(weights="imagenet", include_top=True)
 
-print("Loading OOD references...")
-mean_embedding    = np.load(os.path.join(OOD_DIR, "mean_embedding.npy"))
-inv_cov           = np.load(os.path.join(OOD_DIR, "inv_cov.npy"))
-OOD_THRESHOLD     = np.load(os.path.join(OOD_DIR, "ood_threshold.npy")).item()
-CONF_THRESHOLD    = np.load(os.path.join(OOD_DIR, "conf_threshold.npy")).item()
-ENTROPY_THRESHOLD = np.load(os.path.join(OOD_DIR, "entropy_threshold.npy")).item()
+
+
+
+
+
+
+
+
+
+
+
+
+
+MODEL_PATH = os.path.join(
+
+
+
+
+
+
+
+    BASE_DIR,
+
+
+
+
+
+
+
+    "dermpaw_e3_mobilenetv2.keras"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OOD_DIR = os.path.join(
+
+
+
+
+
+
+
+    BASE_DIR,
+
+
+
+
+
+
+
+    "ood_references_e3"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MEAN_PATH = os.path.join(
+
+
+
+
+
+
+
+    OOD_DIR,
+
+
+
+
+
+
+
+    "mean_embedding.npy"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+INV_COV_PATH = os.path.join(
+
+
+
+
+
+
+
+    OOD_DIR,
+
+
+
+
+
+
+
+    "inv_cov.npy"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OOD_THRESHOLD_PATH = os.path.join(
+
+
+
+
+
+
+
+    OOD_DIR,
+
+
+
+
+
+
+
+    "ood_threshold.npy"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CONF_THRESHOLD_PATH = os.path.join(
+
+
+
+
+
+
+
+    OOD_DIR,
+
+
+
+
+
+
+
+    "conf_threshold.npy"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ENTROPY_THRESHOLD_PATH = os.path.join(
+
+
+
+
+
+
+
+    OOD_DIR,
+
+
+
+
+
+
+
+    "entropy_threshold.npy"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CLASS_NAMES_PATH = os.path.join(
+
+
+
+
+
+
+
+    OOD_DIR,
+
+
+
+
+
+
+
+    "class_names.npy"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 3. E3 MODEL CONFIG
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+IMG_SIZE = (224, 224)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CLASS_NAMES = [
+
+
+
+
+
+
+
+    "demodicosis",
+
+
+
+
+
+
+
+    "dermatitis",
+
+
+
+
+
+
+
+    "healthy",
+
+
+
+
+
+
+
+    "ringworm"
+
+
+
+
+
+
+
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+NUM_CLASSES = 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 4. IMAGE VALIDATION
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ALLOWED_MIMES = {
+
+
+
+
+
+
+
+    "image/jpeg",
+
+
+
+
+
+
+
+    "image/jpg",
+
+
+
+
+
+
+
+    "image/png",
+
+
+
+
+
+
+
+    "image/webp"
+
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 5. QUALITY CHECK
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Score is calculated after resizing to 224x224. Tune with real owner photos.
+
+
+
+BLUR_THRESHOLD = float(os.getenv("DERMPAW_BLUR_THRESHOLD", "80.0"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MIN_BRIGHTNESS = 10.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MAX_BRIGHTNESS = 250.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 6. ORIGINAL DERMPAW DOG/CAT REJECTION CONFIG
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# These are the same decision conditions used by the
+
+
+
+
+
+
+
+# previous ResNet-based DermPaw backend.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 DOG_CAT_RATIO_THRESHOLD = 1.0
-CAT_PROB_THRESHOLD      = 0.20
-
-print(f"[OK] All loaded.")
-print(f"   OOD threshold:  {OOD_THRESHOLD:.2f}")
-print(f"   Confidence:     {CONF_THRESHOLD*100:.0f}%")
-print(f"   Entropy:        {ENTROPY_THRESHOLD}")
 
 
-# ── Helper functions ─────────────────────────────────────────────────────
-def check_quality(pil_img, blur_threshold=20.0,
-                  brightness_range=(10, 250)):
-    img  = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
-    cy, cx = h//2, w//2
-    crop = gray[cy-h//4:cy+h//4, cx-w//4:cx+w//4]
-    blur = cv2.Laplacian(crop, cv2.CV_64F).var()
-    if blur < blur_threshold:
-        return False, f"too blurry (score={blur:.1f})"
-    brightness = gray.mean()
-    if not (brightness_range[0] <= brightness <= brightness_range[1]):
-        return False, f"bad exposure (brightness={brightness:.1f})"
-    return True, "ok"
+
+# ImageNet score is only a screening signal. Calibrate with real dog and cat photos.
+
+DOG_PROB_THRESHOLD = float(os.getenv("DERMPAW_DOG_PROB_THRESHOLD", "0.15"))
 
 
-def preprocess(pil_img):
-    w, h = pil_img.size
-    if w < h:
-        new_w, new_h = 256, int(256*h/w)
-    else:
-        new_w, new_h = int(256*w/h), 256
-    pil_img = pil_img.resize((new_w, new_h), Image.BILINEAR)
-    left    = (new_w-224)//2
-    top     = (new_h-224)//2
-    pil_img = pil_img.crop((left, top, left+224, top+224))
-    arr     = np.array(pil_img, dtype=np.float32)
-    return np.expand_dims(preprocess_input(arr), axis=0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+CAT_PROB_THRESHOLD = 0.20
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ImageNet class index ranges
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DOG_START_INDEX = 151
+
+
+
+
+
+
+
+DOG_END_INDEX = 269
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CAT_START_INDEX = 281
+
+
+
+
+
+
+
+CAT_END_INDEX = 286
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 7. DISEASE INFORMATION
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DISEASE_INFO = {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    "demodicosis": {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "full_name":
+
+
+
+
+
+
+
+            "Demodicosis (Demodectic Mange)",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "description":
+
+
+
+
+
+
+
+            "The image shows visual features associated "
+
+
+
+
+
+
+
+            "with the Demodicosis class learned by the model.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "severity":
+
+
+
+
+
+
+
+            "Moderate",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "color":
+
+
+
+
+
+
+
+            "#FF9800"
+
+
+
+
+
+
+
+    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    "dermatitis": {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "full_name":
+
+
+
+
+
+
+
+            "Dermatitis",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "description":
+
+
+
+
+
+
+
+            "The image shows visual features associated "
+
+
+
+
+
+
+
+            "with the Dermatitis class learned by the model.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "severity":
+
+
+
+
+
+
+
+            "Moderate",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "color":
+
+
+
+
+
+
+
+            "#F44336"
+
+
+
+
+
+
+
+    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    "healthy": {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "full_name":
+
+
+
+
+
+
+
+            "Healthy Skin",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "description":
+
+
+
+
+
+
+
+            "The image shows visual features associated "
+
+
+
+
+
+
+
+            "with the Healthy class learned by the model.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "severity":
+
+
+
+
+
+
+
+            "None",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "color":
+
+
+
+
+
+
+
+            "#4CAF50"
+
+
+
+
+
+
+
+    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    "ringworm": {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "full_name":
+
+
+
+
+
+
+
+            "Ringworm (Dermatophytosis)",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "description":
+
+
+
+
+
+
+
+            "The image shows visual features associated "
+
+
+
+
+
+
+
+            "with the Ringworm class learned by the model.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "severity":
+
+
+
+
+
+
+
+            "High",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "color":
+
+
+
+
+
+
+
+            "#E91E63"
+
+
+
+
+
+
+
+    }
+
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 8. VERIFY REQUIRED FILES
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+REQUIRED_FILES = [
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    MODEL_PATH,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    MEAN_PATH,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    INV_COV_PATH,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    OOD_THRESHOLD_PATH,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    CONF_THRESHOLD_PATH,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ENTROPY_THRESHOLD_PATH
+
+
+
+
+
+
+
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+for file_path in REQUIRED_FILES:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if not os.path.exists(file_path):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise FileNotFoundError(
+
+
+
+
+
+
+
+            f"\nRequired file not found:\n{file_path}\n"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 9. LOAD E3 MODEL
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print("\n" + "=" * 70)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "DERMPAW AI - E3 MOBILENETV2"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print("=" * 70)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "\nLoading E3 model..."
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Model path:",
+
+
+
+
+
+
+
+    MODEL_PATH
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+best_model = tf.keras.models.load_model(
+
+
+
+
+
+
+
+    MODEL_PATH
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "E3 model loaded successfully."
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Input shape :",
+
+
+
+
+
+
+
+    best_model.input_shape
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Output shape:",
+
+
+
+
+
+
+
+    best_model.output_shape
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if tuple(
+
+
+
+
+
+
+
+    best_model.input_shape[1:]
+
+
+
+
+
+
+
+) != (224, 224, 3):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raise ValueError(
+
+
+
+
+
+
+
+        "Unexpected E3 model input shape."
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if best_model.output_shape[-1] != NUM_CLASSES:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raise ValueError(
+
+
+
+
+
+
+
+        "Expected E3 model to output 4 classes."
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "\nClass mapping:"
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+for index, class_name in enumerate(
+
+
+
+
+
+
+
+    CLASS_NAMES
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        f"{index} -> {class_name}"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 10. E3 EMBEDDING MODEL
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "\nBuilding E3 OOD embedding model..."
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+try:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    embedding_layer = best_model.get_layer(
+
+
+
+
+
+
+
+        "global_average_pooling2d"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+except ValueError:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raise RuntimeError(
+
+
+
+
+
+
+
+        "global_average_pooling2d layer "
+
+
+
+
+
+
+
+        "was not found in E3 model."
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+embedding_model = tf.keras.Model(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    inputs=best_model.input,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    outputs=embedding_layer.output
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Embedding layer:",
+
+
+
+
+
+
+
+    embedding_layer.name
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Embedding shape:",
+
+
+
+
+
+
+
+    embedding_model.output_shape
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if embedding_model.output_shape[-1] != 1280:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raise ValueError(
+
+
+
+
+
+
+
+        "Expected 1280-dimensional "
+
+
+
+
+
+
+
+        "MobileNetV2 embedding."
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 11. LOAD E3 REJECTION REFERENCES
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "\nLoading E3 rejection references..."
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+MEAN_EMBEDDING = np.load(
+
+
+
+
+
+
+
+    MEAN_PATH
+
+
+
+
+
+
+
+).astype(
+
+
+
+
+
+
+
+    np.float64
+
+
+
+
+
+
+
+).reshape(-1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+INV_COV = np.load(
+
+
+
+
+
+
+
+    INV_COV_PATH
+
+
+
+
+
+
+
+).astype(
+
+
+
+
+
+
+
+    np.float64
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OOD_THRESHOLD = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    np.load(
+
+
+
+
+
+
+
+        OOD_THRESHOLD_PATH
+
+
+
+
+
+
+
+    ).item()
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CONF_THRESHOLD = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    np.load(
+
+
+
+
+
+
+
+        CONF_THRESHOLD_PATH
+
+
+
+
+
+
+
+    ).item()
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ENTROPY_THRESHOLD = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    np.load(
+
+
+
+
+
+
+
+        ENTROPY_THRESHOLD_PATH
+
+
+
+
+
+
+
+    ).item()
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 12. VALIDATE OOD REFERENCES
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if MEAN_EMBEDDING.shape != (1280,):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raise ValueError(
+
+
+
+
+
+
+
+        "mean_embedding.npy must have shape (1280,)"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if INV_COV.shape != (1280, 1280):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raise ValueError(
+
+
+
+
+
+
+
+        "inv_cov.npy must have shape (1280, 1280)"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Mean embedding:",
+
+
+
+
+
+
+
+    MEAN_EMBEDDING.shape
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Inverse covariance:",
+
+
+
+
+
+
+
+    INV_COV.shape
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Confidence threshold:",
+
+
+
+
+
+
+
+    CONF_THRESHOLD
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Entropy threshold:",
+
+
+
+
+
+
+
+    ENTROPY_THRESHOLD
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Mahalanobis OOD threshold:",
+
+
+
+
+
+
+
+    OOD_THRESHOLD
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 13. CLASS MAPPING VALIDATION
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if os.path.exists(
+
+
+
+
+
+
+
+    CLASS_NAMES_PATH
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    saved_classes = np.load(
+
+
+
+
+
+
+
+        CLASS_NAMES_PATH,
+
+
+
+
+
+
+
+        allow_pickle=True
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    saved_classes = [
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        str(x).lower()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        for x in saved_classes.tolist()
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "Saved class mapping:",
+
+
+
+
+
+
+
+        saved_classes
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if saved_classes != CLASS_NAMES:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise ValueError(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "\nClass mapping mismatch!\n"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            f"Expected: {CLASS_NAMES}\n"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            f"Saved   : {saved_classes}\n"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 14. LOAD IMAGENET ANIMAL DETECTOR
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "\nLoading ImageNet MobileNetV2 dog detector..."
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+animal_detector = MobileNetV2(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    weights="imagenet",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    include_top=True
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+print(
+
+
+
+
+
+
+
+    "Dog detector loaded successfully."
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 15. IMAGE LOADING
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def load_image_from_request(
+
+
+
+
+
+
+
+    file_storage
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if file_storage is None:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise ValueError(
+
+
+
+
+
+
+
+            "No image file was provided."
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    mime_type = (
+
+
+
+
+
+
+
+        file_storage.mimetype
+
+
+
+
+
+
+
+        or ""
+
+
+
+
+
+
+
+    ).lower()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if mime_type not in ALLOWED_MIMES:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise ValueError(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "Unsupported image type. "
+
+
+
+
+
+
+
+            "Please upload JPG, PNG or WEBP."
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    raw_bytes = file_storage.read()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if not raw_bytes:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise ValueError(
+
+
+
+
+
+
+
+            "Uploaded image is empty."
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if len(raw_bytes) > MAX_IMAGE_BYTES:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise ValueError(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "Image is too large. "
+
+
+
+
+
+
+
+            "Maximum allowed size is 10 MB."
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    try:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        image = Image.open(
+
+
+
+
+
+
+
+            io.BytesIO(
+
+
+
+
+
+
+
+                raw_bytes
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        image = ImageOps.exif_transpose(
+
+
+
+
+
+
+
+            image
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        image.load()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        image = image.convert(
+
+
+
+
+
+
+
+            "RGB"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    except (
+
+
+
+
+
+
+
+        UnidentifiedImageError,
+
+
+
+
+
+
+
+        OSError,
+
+
+
+
+
+
+
+        ValueError
+
+
+
+
+
+
+
+    ):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        raise ValueError(
+
+
+
+
+
+
+
+            "The uploaded file is not a valid image."
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return image
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 16. LAPLACIAN VARIANCE
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def laplacian_variance(
+
+
+
+
+
+
+
+    gray_array
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    gray_array = gray_array.astype(
+
+
+
+
+
+
+
+        np.float32
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    center = (
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        -4.0
+
+
+
+
+
+
+
+        * gray_array[
+
+
+
+
+
+
+
+            1:-1,
+
+
+
+
+
+
+
+            1:-1
+
+
+
+
+
+
+
+        ]
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    up = gray_array[
+
+
+
+
+
+
+
+        :-2,
+
+
+
+
+
+
+
+        1:-1
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    down = gray_array[
+
+
+
+
+
+
+
+        2:,
+
+
+
+
+
+
+
+        1:-1
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    left = gray_array[
+
+
+
+
+
+
+
+        1:-1,
+
+
+
+
+
+
+
+        :-2
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    right = gray_array[
+
+
+
+
+
+
+
+        1:-1,
+
+
+
+
+
+
+
+        2:
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    laplacian = (
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        center
+
+
+
+
+
+
+
+        + up
+
+
+
+
+
+
+
+        + down
+
+
+
+
+
+
+
+        + left
+
+
+
+
+
+
+
+        + right
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return float(
+
+
+
+
+
+
+
+        np.var(
+
+
+
+
+
+
+
+            laplacian
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 17. QUALITY CHECK
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def check_quality(
+
+
+
+
+
+
+
+    pil_img
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    gray = pil_img.convert(
+
+
+
+
+
+
+
+        "L"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    gray = gray.resize(
+
+
+
+
+
+
+
+        IMG_SIZE,
+
+
+
+
+
+
+
+        Image.BILINEAR
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    gray_array = np.asarray(
+
+
+
+
+
+
+
+        gray,
+
+
+
+
+
+
+
+        dtype=np.float32
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    brightness = float(
+
+
+
+
+
+
+
+        np.mean(
+
+
+
+
+
+
+
+            gray_array
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    blur_score = laplacian_variance(
+
+
+
+
+
+
+
+        gray_array
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "\n[QUALITY CHECK]"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "Brightness:",
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            brightness,
+
+
+
+
+
+
+
+            3
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "Blur score:",
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            blur_score,
+
+
+
+
+
+
+
+            3
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+    print("Blur threshold:", BLUR_THRESHOLD)
+
+
+
+    print("Blur rejected:", blur_score < BLUR_THRESHOLD)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # DARK IMAGE
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if brightness < MIN_BRIGHTNESS:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "passed":
+
+
+
+
+
+
+
+                False,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "reason":
+
+
+
+
+
+
+
+                "too_dark",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "message":
+
+
+
+
+
+
+
+                "The image is too dark. "
+
+
+
+
+
+
+
+                "Please capture another image "
+
+
+
+
+
+
+
+                "with better lighting.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "brightness":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    brightness,
+
+
+
+
+
+
+
+                    4
+
+
+
+
+
+
+
+                ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "blurScore":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    blur_score,
+
+
+
+
+
+
+
+                    4
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # BRIGHT IMAGE
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if brightness > MAX_BRIGHTNESS:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "passed":
+
+
+
+
+
+
+
+                False,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "reason":
+
+
+
+
+
+
+
+                "too_bright",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "message":
+
+
+
+
+
+
+
+                "The image is too bright. "
+
+
+
+
+
+
+
+                "Please capture another image "
+
+
+
+
+
+
+
+                "with less glare.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "brightness":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    brightness,
+
+
+
+
+
+
+
+                    4
+
+
+
+
+
+
+
+                ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "blurScore":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    blur_score,
+
+
+
+
+
+
+
+                    4
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # BLUR IMAGE
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if blur_score < BLUR_THRESHOLD:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "passed":
+
+
+
+
+
+
+
+                False,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "reason":
+
+
+
+
+
+
+
+                "blurred_image",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "message":
+
+
+
+
+
+
+
+                "The image appears blurred. "
+
+
+
+
+
+
+
+                "Please capture a clear and focused image.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "brightness":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    brightness,
+
+
+
+
+
+
+
+                    4
+
+
+
+
+
+
+
+                ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "blurScore":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    blur_score,
+
+
+
+
+
+
+
+                    4
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # PASS
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "passed":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "reason":
+
+
+
+
+
+
+
+            "quality_ok",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "message":
+
+
+
+
+
+
+
+            "Image quality check passed.",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "brightness":
+
+
+
+
+
+
+
+            round(
+
+
+
+
+
+
+
+                brightness,
+
+
+
+
+
+
+
+                4
+
+
+
+
+
+
+
+            ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "blurScore":
+
+
+
+
+
+
+
+            round(
+
+
+
+
+
+
+
+                blur_score,
+
+
+
+
+
+
+
+                4
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 18. ORIGINAL DERMPAW DOG CHECK
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def check_dog(pil_img):
-    img_r = pil_img.resize((224, 224), Image.BILINEAR)
-    arr   = np.array(img_r, dtype=np.float32)
-    batch = np.expand_dims(mobilenet_preprocess(arr), axis=0)
-    preds = dog_detector.predict(batch, verbose=0)
-    dog_p = float(np.sum(preds[0][151:269]))
-    cat_p = float(np.sum(preds[0][281:286]))
-    ratio = dog_p / max(cat_p, 0.0001)
-    is_dog = (cat_p < CAT_PROB_THRESHOLD) and \
-             (ratio > DOG_CAT_RATIO_THRESHOLD)
-    return is_dog, dog_p, cat_p, ratio
+
+    image = pil_img.convert("RGB").resize(IMG_SIZE, Image.BILINEAR)
+
+    array = np.asarray(image, dtype=np.float32)
+
+    batch = np.expand_dims(mobilenet_preprocess(array), axis=0)
+
+    predictions = animal_detector.predict(batch, verbose=0)[0]
 
 
-def multicrop_predict(pil_img):
-    w, h  = pil_img.size
-    crops = {
-        "center"      : (w//4,  h//4,  3*w//4, 3*h//4),
-        "top_left"    : (0,     0,     w//2,   h//2),
-        "top_right"   : (w//2,  0,     w,      h//2),
-        "bottom_left" : (0,     h//2,  w//2,   h),
-        "bottom_right": (w//2,  h//2,  w,      h),
+
+    dog_probability = float(np.sum(predictions[DOG_START_INDEX:DOG_END_INDEX]))
+
+    cat_probability = float(np.sum(predictions[CAT_START_INDEX:CAT_END_INDEX]))
+
+    dog_cat_ratio = dog_probability / max(cat_probability, 0.0001)
+
+
+
+    dog_check_passed = dog_probability >= DOG_PROB_THRESHOLD
+
+    cat_check_passed = cat_probability < CAT_PROB_THRESHOLD
+
+    ratio_check_passed = dog_cat_ratio > DOG_CAT_RATIO_THRESHOLD
+
+    confirmed_dog = dog_check_passed and cat_check_passed and ratio_check_passed
+
+
+
+    print("\n[DOG CHECK]")
+
+    print("Dog probability:", round(dog_probability, 6), "| minimum:", DOG_PROB_THRESHOLD)
+
+    print("Cat probability:", round(cat_probability, 6), "| maximum:", CAT_PROB_THRESHOLD)
+
+    print("Dog/Cat ratio:", round(dog_cat_ratio, 6), "| minimum:", DOG_CAT_RATIO_THRESHOLD)
+
+    print("Confirmed dog:", confirmed_dog)
+
+
+
+    if confirmed_dog:
+
+        reason = "dog_confirmed"
+
+        animal_status = "dog"
+
+    elif not cat_check_passed:
+
+        reason = "cat_probability_too_high"
+
+        animal_status = "unconfirmed"
+
+    elif not dog_check_passed:
+
+        reason = "dog_probability_too_low"
+
+        animal_status = "unconfirmed"
+
+    else:
+
+        reason = "dog_cat_ratio_too_low"
+
+        animal_status = "unconfirmed"
+
+
+
+    return {
+
+        "passed": bool(confirmed_dog),
+
+        "animalStatus": animal_status,
+
+        "reason": reason,
+
+        "dogProbability": round(dog_probability, 6),
+
+        "catProbability": round(cat_probability, 6),
+
+        "dogCatRatio": round(dog_cat_ratio, 6),
+
+        "dogProbabilityThreshold": DOG_PROB_THRESHOLD,
+
+        "catProbabilityThreshold": CAT_PROB_THRESHOLD,
+
+        "dogCatRatioThreshold": DOG_CAT_RATIO_THRESHOLD,
+
     }
-    all_preds = []
-    for box in crops.values():
-        crop  = pil_img.crop(box).resize((224, 224), Image.BILINEAR)
-        arr   = preprocess_input(np.array(crop, dtype=np.float32))
-        preds = best_model.predict(np.expand_dims(arr, 0), verbose=0)[0]
-        all_preds.append(preds)
-    return np.mean(all_preds, axis=0)
 
 
-# ── Health check endpoint ────────────────────────────────────────────────
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({
-        "status": "ok",
-        "model" : "DermPaw AI ResNet50"
-    })
 
 
-# ── Main prediction endpoint ─────────────────────────────────────────────
-@app.route("/predict", methods=["POST"])
-def predict():
-    if "image" not in request.files:
-        return jsonify({
-            "status" : "error",
-            "message": "No image provided"
-        }), 400
 
-    file    = request.files["image"]
-    pil_img = Image.open(file.stream)
-    pil_img = ImageOps.exif_transpose(pil_img)
-    pil_img = pil_img.convert("RGB")
+# ============================================================
 
-    # Stage 1: Quality check
-    ok, reason = check_quality(pil_img)
-    if not ok:
-        return jsonify({
-            "status" : "rejected",
-            "stage"  : "quality",
-            "reason" : reason,
-            "message": "Image quality too low. Please retake in good lighting."
+# E3 IMAGE PREPARATION
+
+# ============================================================
+
+
+
+def prepare_e3_image(
+
+
+
+
+
+
+
+    pil_img
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    image = pil_img.convert(
+
+
+
+
+
+
+
+        "RGB"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    image = image.resize(
+
+
+
+
+
+
+
+        IMG_SIZE,
+
+
+
+
+
+
+
+        Image.BILINEAR
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    array = np.asarray(
+
+
+
+
+
+
+
+        image,
+
+
+
+
+
+
+
+        dtype=np.float32
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    array = mobilenet_preprocess(
+
+
+
+
+
+
+
+        array
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return array
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 20. NORMALIZED ENTROPY
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def calculate_normalized_entropy(
+
+
+
+
+
+
+
+    probabilities
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    probabilities = np.asarray(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        probabilities,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        dtype=np.float32
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    safe_probabilities = np.clip(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        probabilities,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        1e-8,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        1.0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    entropy = -np.sum(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        safe_probabilities
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        * np.log(
+
+
+
+
+
+
+
+            safe_probabilities
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    normalized_entropy = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        entropy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        /
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        np.log(
+
+
+
+
+
+
+
+            NUM_CLASSES
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return normalized_entropy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 21. MAHALANOBIS OOD
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def calculate_ood_score(
+
+
+
+
+
+
+
+    preprocessed_image
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    batch = np.expand_dims(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        preprocessed_image,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        axis=0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    embedding = embedding_model.predict(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        batch,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        verbose=0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    )[0]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # Use float64 here to match the Kaggle old-style OOD
+
+
+
+
+
+
+
+    # calibration (np.cov + np.linalg.pinv) as closely as possible.
+
+
+
+
+
+
+
+    embedding = np.asarray(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        embedding,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        dtype=np.float64
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ).reshape(-1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    diff = (
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        embedding
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        - MEAN_EMBEDDING
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    squared_distance = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        np.einsum(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "i,ij,j->",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            diff,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            INV_COV,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            diff
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    squared_distance = max(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        squared_distance,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        0.0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    distance = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        math.sqrt(
+
+
+
+
+
+
+
+            squared_distance
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    is_ood = bool(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        distance
+
+
+
+
+
+
+
+        > OOD_THRESHOLD
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "score":
+
+
+
+
+
+
+
+            distance,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "threshold":
+
+
+
+
+
+
+
+            OOD_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "isOOD":
+
+
+
+
+
+
+
+            is_ood
+
+
+
+
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 22. FULL IMAGE E3 SAFETY CHECK
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def full_image_e3_checks(
+
+
+
+
+
+
+
+    pil_img
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    image_array = prepare_e3_image(
+
+
+
+
+
+
+
+        pil_img
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    batch = np.expand_dims(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        image_array,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        axis=0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    probabilities = best_model.predict(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        batch,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        verbose=0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    )[0]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    probabilities = np.asarray(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        probabilities,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        dtype=np.float32
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    predicted_index = int(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        np.argmax(
+
+
+
+
+
+
+
+            probabilities
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    predicted_class = CLASS_NAMES[
+
+
+
+
+
+
+
+        predicted_index
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    confidence = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        np.max(
+
+
+
+
+
+
+
+            probabilities
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    entropy = calculate_normalized_entropy(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        probabilities
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ood = calculate_ood_score(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        image_array
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    low_confidence = bool(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        confidence
+
+
+
+
+
+
+
+        < CONF_THRESHOLD
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    high_entropy = bool(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        entropy
+
+
+
+
+
+
+
+        > ENTROPY_THRESHOLD
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    is_ood = bool(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        ood["isOOD"]
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    passed = not (
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        low_confidence
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        or
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        high_entropy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        or
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        is_ood
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "\n[FULL IMAGE E3 SAFETY]"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Predicted:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        predicted_class
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Confidence:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            confidence,
+
+
+
+
+
+
+
+            6
+
+
+
+
+
+
+
+        ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "| threshold:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            CONF_THRESHOLD,
+
+
+
+
+
+
+
+            6
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Entropy:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            entropy,
+
+
+
+
+
+
+
+            6
+
+
+
+
+
+
+
+        ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "| threshold:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            ENTROPY_THRESHOLD,
+
+
+
+
+
+
+
+            6
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Mahalanobis:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            ood["score"],
+
+
+
+
+
+
+
+            6
+
+
+
+
+
+
+
+        ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "| threshold:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        round(
+
+
+
+
+
+
+
+            OOD_THRESHOLD,
+
+
+
+
+
+
+
+            6
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Safety passed:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        passed
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "passed":
+
+
+
+
+
+
+
+            passed,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "predictedClass":
+
+
+
+
+
+
+
+            predicted_class,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "confidence":
+
+
+
+
+
+
+
+            confidence,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "lowConfidence":
+
+
+
+
+
+
+
+            low_confidence,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "entropy":
+
+
+
+
+
+
+
+            entropy,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "highEntropy":
+
+
+
+
+
+
+
+            high_entropy,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "oodScore":
+
+
+
+
+
+
+
+            ood["score"],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "isOOD":
+
+
+
+
+
+
+
+            is_ood,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "probabilities":
+
+
+
+
+
+
+
+            probabilities.tolist()
+
+
+
+
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 23. CREATE SIX CROPS
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def create_crops(
+
+
+
+
+
+
+
+    pil_img,
+
+
+
+
+
+
+
+    crop_ratio=0.80
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    image = pil_img.convert(
+
+
+
+
+
+
+
+        "RGB"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    width, height = image.size
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crop_width = max(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        1,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        int(
+
+
+
+
+
+
+
+            width
+
+
+
+
+
+
+
+            * crop_ratio
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crop_height = max(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        1,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        int(
+
+
+
+
+
+
+
+            height
+
+
+
+
+
+
+
+            * crop_ratio
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops = [
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            "full",
+
+
+
+
+
+
+
+            image.copy()
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # CENTER
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    center_left = max(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            width
+
+
+
+
+
+
+
+            - crop_width
+
+
+
+
+
+
+
+        ) // 2
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    center_top = max(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            height
+
+
+
+
+
+
+
+            - crop_height
+
+
+
+
+
+
+
+        ) // 2
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops.append(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            "center",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            image.crop(
+
+
+
+
+
+
+
+                (
+
+
+
+
+
+
+
+                    center_left,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    center_top,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    center_left
+
+
+
+
+
+
+
+                    + crop_width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    center_top
+
+
+
+
+
+
+
+                    + crop_height
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # TOP LEFT
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops.append(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            "top_left",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            image.crop(
+
+
+
+
+
+
+
+                (
+
+
+
+
+
+
+
+                    0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    crop_width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    crop_height
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # TOP RIGHT
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops.append(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            "top_right",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            image.crop(
+
+
+
+
+
+
+
+                (
+
+
+
+
+
+
+
+                    width
+
+
+
+
+
+
+
+                    - crop_width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    crop_height
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # BOTTOM LEFT
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops.append(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            "bottom_left",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            image.crop(
+
+
+
+
+
+
+
+                (
+
+
+
+
+
+
+
+                    0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    height
+
+
+
+
+
+
+
+                    - crop_height,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    crop_width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    height
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+    # BOTTOM RIGHT
+
+
+
+
+
+
+
+    # ========================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops.append(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        (
+
+
+
+
+
+
+
+            "bottom_right",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            image.crop(
+
+
+
+
+
+
+
+                (
+
+
+
+
+
+
+
+                    width
+
+
+
+
+
+
+
+                    - crop_width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    height
+
+
+
+
+
+
+
+                    - crop_height,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    width,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    height
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return crops
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 24. SIX-CROP E3 PREDICTION
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def multicrop_predict(
+
+
+
+
+
+
+
+    pil_img
+
+
+
+
+
+
+
+):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crops = create_crops(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        pil_img,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_ratio=0.80
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crop_names = []
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    batch_images = []
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    for (
+
+
+
+
+
+
+
+        crop_name,
+
+
+
+
+
+
+
+        crop_image
+
+
+
+
+
+
+
+    ) in crops:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_names.append(
+
+
+
+
+
+
+
+            crop_name
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        batch_images.append(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            prepare_e3_image(
+
+
+
+
+
+
+
+                crop_image
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    batch = np.stack(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        batch_images,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        axis=0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    predictions = best_model.predict(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        batch,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        verbose=0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    predictions = np.asarray(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        predictions,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        dtype=np.float32
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    mean_probabilities = np.mean(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        predictions,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        axis=0
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    final_index = int(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        np.argmax(
+
+
+
+
+
+
+
+            mean_probabilities
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    final_class = CLASS_NAMES[
+
+
+
+
+
+
+
+        final_index
+
+
+
+
+
+
+
+    ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    final_confidence = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        mean_probabilities[
+
+
+
+
+
+
+
+            final_index
+
+
+
+
+
+
+
+        ]
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    crop_results = []
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "\n[6-CROP E3 CLASSIFICATION]"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    for (
+
+
+
+
+
+
+
+        crop_name,
+
+
+
+
+
+
+
+        crop_probabilities
+
+
+
+
+
+
+
+    ) in zip(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_names,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        predictions
+
+
+
+
+
+
+
+    ):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_index = int(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            np.argmax(
+
+
+
+
+
+
+
+                crop_probabilities
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_class = CLASS_NAMES[
+
+
+
+
+
+
+
+            crop_index
+
+
+
+
+
+
+
+        ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_confidence = float(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            crop_probabilities[
+
+
+
+
+
+
+
+                crop_index
+
+
+
+
+
+
+
+            ]
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            f"{crop_name:<15}",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "->",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            f"{crop_class:<12}",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            f"{crop_confidence * 100:.2f}%"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        crop_results.append({
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "crop":
+
+
+
+
+
+
+
+                crop_name,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "predictedClass":
+
+
+
+
+
+
+
+                crop_class,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "confidence":
+
+
+
+
+
+
+
+                round(
+
+
+
+
+
+
+
+                    crop_confidence
+
+
+
+
+
+
+
+                    * 100.0,
+
+
+
+
+
+
+
+                    2
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
         })
 
-    # Stage 2: Dog detector
-    is_dog, dog_p, cat_p, ratio = check_dog(pil_img)
-    if not is_dog:
-        return jsonify({
-            "status" : "rejected",
-            "stage"  : "dog_detector",
-            "message": "Please upload a photo of a dog's skin."
-        })
 
-    # Stage 3: OOD check
-    img_batch = preprocess(pil_img)
-    embedding = embedding_model.predict(img_batch, verbose=0)[0]
-    ood_dist  = scipy.spatial.distance.mahalanobis(
-                    embedding, mean_embedding, inv_cov)
 
-    if ood_dist > OOD_THRESHOLD:
-        return jsonify({
-            "status" : "unknown",
-            "stage"  : "ood",
-            "message": "We could not identify this skin condition. "
-                       "Please consult a veterinarian for proper diagnosis.",
-            "action" : "consult_vet"
-        })
 
-    # Stage 4: Multi-crop classification
-    avg_preds  = multicrop_predict(pil_img)
-    confidence = float(np.max(avg_preds))
-    pred_class = CLASSES[np.argmax(avg_preds)]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     all_scores = {
-        cls: round(float(avg_preds[i]) * 100, 1)
-        for i, cls in enumerate(CLASSES)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        CLASS_NAMES[index]:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                float(
+
+
+
+
+
+
+
+                    mean_probabilities[
+
+
+
+
+
+
+
+                        index
+
+
+
+
+
+
+
+                    ]
+
+
+
+
+
+
+
+                )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                * 100.0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                2
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        for index in range(
+
+
+
+
+
+
+
+            NUM_CLASSES
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
     }
 
-    entropy       = -np.sum(avg_preds * np.log(avg_preds + 1e-10))
-    entropy_ratio = entropy / np.log(len(CLASSES))
 
-    if entropy_ratio > ENTROPY_THRESHOLD:
-        return jsonify({
-            "status" : "retake",
-            "stage"  : "entropy",
-            "message": "Image unclear — please photograph the "
-                       "affected skin area closely.",
-            "tip"    : "Get 15-30cm closer to the affected area and retake."
-        })
 
-    # Stage 5: Confidence check
-    if confidence < CONF_THRESHOLD:
-        return jsonify({
-            "status" : "retake",
-            "stage"  : "confidence",
-            "message": "Image unclear — please photograph the "
-                       "affected skin area closely.",
-            "tip"    : "Get 15-30cm closer to the affected area and retake."
-        })
 
-    # ── Success — return prediction ──────────────────────────────────────
-    disease_info = DISEASE_INFO.get(pred_class, {})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+        "-" * 55
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Final prediction:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        final_class
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "Model confidence:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        f"{final_confidence * 100:.2f}%"
+
+
+
+
+
+
+
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "disease":
+
+
+
+
+
+
+
+            final_class,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "confidence":
+
+
+
+
+
+
+
+            round(
+
+
+
+
+
+
+
+                final_confidence
+
+
+
+
+
+
+
+                * 100.0,
+
+
+
+
+
+
+
+                2
+
+
+
+
+
+
+
+            ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "allScores":
+
+
+
+
+
+
+
+            all_scores,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "cropResults":
+
+
+
+
+
+
+
+            crop_results
+
+
+
+
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 25. HEALTH
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route(
+
+
+
+
+
+
+
+    "/health",
+
+
+
+
+
+
+
+    methods=["GET"]
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+def health():
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     return jsonify({
-        "status"      : "predicted",
-        "disease"     : pred_class,
-        "confidence"  : round(confidence * 100, 1),
-        "all_scores"  : all_scores,
-        "disease_info": disease_info,
-        "message"     : f"Detected: {disease_info.get('full_name', pred_class)}. "
-                        "Please consult a veterinarian for confirmation."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "status":
+
+
+
+
+
+
+
+            "ok",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "build": "dog-only-message-v2",
+
+        "service":
+
+
+
+
+
+
+
+            "DermPaw AI",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "model":
+
+
+
+
+
+
+
+            "E3 MobileNetV2",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "input_shape":
+
+
+
+
+
+
+
+            [224, 224, 3],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "classes":
+
+
+
+
+
+
+
+            CLASS_NAMES,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+        # Quality
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "quality_check":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "blur_rejection":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "blur_threshold":
+
+
+
+
+
+
+
+            BLUR_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "brightness_range":
+
+
+
+
+
+
+
+            [
+
+
+
+
+
+
+
+                MIN_BRIGHTNESS,
+
+
+
+
+
+
+
+                MAX_BRIGHTNESS
+
+
+
+
+
+
+
+            ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+        # Dog gate
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "dog_check":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "dog_gate":
+
+
+
+
+
+
+
+            "original_dermpaw_dog_cat_gate",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "cat_probability_threshold":
+
+
+
+
+
+
+
+            CAT_PROB_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "dog_cat_ratio_threshold":
+
+
+
+
+
+
+
+            DOG_CAT_RATIO_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+        # E3 safety
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "confidence_rejection":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "confidence_threshold":
+
+
+
+
+
+
+
+            CONF_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "entropy_rejection":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "entropy_threshold":
+
+
+
+
+
+
+
+            ENTROPY_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "ood":
+
+
+
+
+
+
+
+            True,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "ood_method":
+
+
+
+
+
+
+
+            "Mahalanobis",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "ood_threshold":
+
+
+
+
+
+
+
+            OOD_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "ood_input":
+
+
+
+
+
+
+
+            "full_image",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+        # Classification
+
+
+
+
+
+
+
+        # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "inference_strategy":
+
+
+
+
+
+
+
+            "6-crop mean probability",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "number_of_crops":
+
+
+
+
+
+
+
+            6,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        "gradcam":
+
+            "active",
+
+        "gradcam_layer":
+
+            "out_relu",
+
+        "gradcam_status":
+
+            "implemented"
+
+
+
+
+
+
+
     })
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# 26. GRAD-CAM EXPLANATION SERVICE
+# ============================================================
+
+def inspect_and_select_gradcam_layer(model):
+    """
+    Inspects the model architecture and selects the final suitable convolutional layer automatically.
+    Compatible with nested MobileNetV2 backbones or standard flat convolutional models.
+    Returns: (parent_submodel, target_conv_layer, layer_name)
+    """
+    for layer in reversed(model.layers):
+        # Case A: Nested backbone model (e.g., mobilenetv2_1.00_224 inside Functional/Sequential)
+        if hasattr(layer, "layers") and len(layer.layers) > 0:
+            for sub_layer in reversed(layer.layers):
+                try:
+                    s = sub_layer.output.shape
+                    cls = sub_layer.__class__.__name__.lower()
+                    name = sub_layer.name.lower()
+                    if len(s) == 4 and ("conv" in cls or "relu" in cls or "relu" in name or "conv" in name):
+                        return layer, sub_layer, sub_layer.name
+                except Exception:
+                    continue
+        else:
+            # Case B: Direct top-level convolutional layer
+            try:
+                s = layer.output.shape
+                cls = layer.__class__.__name__.lower()
+                name = layer.name.lower()
+                if len(s) == 4 and ("conv" in cls or "relu" in cls or "relu" in name or "conv" in name):
+                    return None, layer, layer.name
+            except Exception:
+                continue
+    return None, None, "unknown"
+
+
+# Automatically discover target convolutional layer at startup
+PARENT_BACKBONE, GRADCAM_TARGET_LAYER, GRADCAM_TARGET_LAYER_NAME = inspect_and_select_gradcam_layer(best_model)
+print(f"[GRAD-CAM INIT] Automatically selected target layer: {GRADCAM_TARGET_LAYER_NAME} (Parent: {PARENT_BACKBONE.name if PARENT_BACKBONE else 'Top-level'})")
+
+
+def generate_gradcam(pil_img, target_class=None):
+    """
+    Generates a full-coverage Grad-CAM heatmap for the predicted class on the original full image.
+
+    ======================================================================
+    NOTE ON ARCHITECTURAL SEPARATION (6-CROP vs FULL-IMAGE GRAD-CAM):
+    ======================================================================
+    1. DIAGNOSTIC PREDICTION:
+       Derived from the 6-crop multi-crop ensemble (full, center, top-left,
+       top-right, bottom-left, bottom-right) to ensure maximum classification
+       robustness, high sensitivity, and test-time augmentation.
+    2. GRAD-CAM VISUAL EXPLANATION:
+       Generated using the full-image inference path for the predicted class.
+       Computing the attribution map on the full, uncropped image ensures a single,
+       geometrically faithful 1:1 spatial correspondence with the user's captured photo.
+    ======================================================================
+    """
+    try:
+        import cv2
+        import base64
+        import io
+        import numpy as np
+
+        orig_w, orig_h = pil_img.size
+        img_array = prepare_e3_image(pil_img)
+        img_tensor = tf.constant(np.expand_dims(img_array, axis=0), dtype=tf.float32)
+
+        # Inspect and select the final suitable convolutional layer automatically
+        parent_submodel, conv_layer, layer_name = inspect_and_select_gradcam_layer(best_model)
+        if conv_layer is None:
+            print("[GRAD-CAM] No compatible convolutional layer found.")
+            return ""
+
+        gap = best_model.get_layer("global_average_pooling2d")
+        dropout = best_model.get_layer("dropout")
+        dense = best_model.get_layer("dense")
+
+        # Track gradients w.r.t. the selected convolutional layer output
+        with tf.GradientTape() as tape:
+            if parent_submodel is not None:
+                conv_outputs = parent_submodel(img_tensor, training=False)
+            else:
+                conv_outputs = conv_layer(img_tensor, training=False)
+
+            tape.watch(conv_outputs)
+            x = gap(conv_outputs)
+            x = dropout(x, training=False)
+
+            # Use pre-softmax logits to prevent gradient saturation
+            logits = tf.matmul(x, dense.kernel) + dense.bias
+
+            if target_class is None or not (0 <= target_class < NUM_CLASSES):
+                target_class = int(np.argmax(logits[0]))
+
+            class_score = logits[:, target_class]
+
+        grads = tape.gradient(class_score, conv_outputs)
+        if grads is None:
+            # Handle missing gradients gracefully so prediction continues
+            return ""
+
+        # Pool gradients across spatial dimensions
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        cam = conv_outputs[0] @ pooled_grads[..., tf.newaxis]
+        cam = tf.maximum(tf.squeeze(cam), 0.0).numpy()
+        cam = np.nan_to_num(cam, nan=0.0, posinf=0.0, neginf=0.0)
+
+        cam_max = np.max(cam)
+        if cam_max > 0.0:
+            cam = cam / cam_max
+        else:
+            return ""
+
+        # Resize heatmap to original image dimensions with bicubic interpolation & smoothing
+        hires = cv2.resize(cam, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
+        hires = cv2.GaussianBlur(hires, (21, 21), 0)
+        hires_max = np.max(hires)
+        if hires_max > 0.0:
+            hires = hires / hires_max
+
+        # Threshold at 0.20 to envelope full affected area while keeping background clean
+        threshold = 0.20
+        mask = np.where(hires < threshold, 0.0, (hires - threshold) / (1.0 - threshold))
+        mask = np.power(mask, 0.65)
+        mask = np.clip(mask, 0.0, 1.0)
+
+        # High-visibility Medical Thermal Colormap:
+        # Outer boundary of lesion: Warm Golden Amber (RGB 255, 225, 0)
+        # Intermediate lesion zone: Vivid Orange (RGB 255, 120, 0)
+        # Focal core of wound:      Deep Crimson Red (RGB 255, 10, 0)
+        cmap_r = np.full_like(mask, 255.0)
+        cmap_g = np.clip((1.0 - np.power(mask, 0.75)) * 225.0, 0.0, 225.0)
+        cmap_b = np.zeros_like(mask)
+        heatmap_rgb = np.stack([cmap_r, cmap_g, cmap_b], axis=-1)
+
+        # Transparent color overlay (healthy skin stays 100% natural, affected areas blended)
+        orig_np = np.array(pil_img.convert("RGB"), dtype=np.float32)
+        alpha = np.expand_dims(mask * 0.68, axis=-1)
+
+        final_overlay = np.uint8(np.clip(orig_np * (1.0 - alpha) + heatmap_rgb * alpha, 0, 255))
+
+        buf = io.BytesIO()
+        Image.fromarray(final_overlay).save(buf, format="JPEG", quality=90)
+        b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64_str}"
+    except Exception as e:
+        # Handle unexpected errors gracefully so prediction is never broken
+        print("[GRAD-CAM GENERATOR ERROR]", repr(e))
+        return ""
+
+
+@app.route(
+
+
+
+
+
+
+
+    "/predict",
+
+
+
+
+
+
+
+    methods=["POST"]
+
+
+
+
+
+
+
+)
+
+
+
+
+
+
+
+def predict():
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    try:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+            "\n"
+
+
+
+
+
+
+
+            + "=" * 70
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+            "NEW DERMPAW AI PREDICTION"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+            "=" * 70
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # IMAGE REQUIRED
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if "image" not in request.files:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            return jsonify({
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "status":
+
+
+
+
+
+
+
+                    "rejected",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "reason":
+
+
+
+
+
+
+
+                    "missing_image",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "message":
+
+
+
+
+
+
+
+                    "No image was uploaded."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            }), 400
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        uploaded_file = request.files[
+
+
+
+
+
+
+
+            "image"
+
+
+
+
+
+
+
+        ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # LOAD IMAGE
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        try:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            pil_img = load_image_from_request(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                uploaded_file
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        except ValueError as error:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            return jsonify({
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "status":
+
+
+
+
+
+
+
+                    "rejected",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "reason":
+
+
+
+
+
+
+
+                    "invalid_image",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "message":
+
+
+
+
+
+
+
+                    str(error)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            }), 400
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "\nUploaded image size:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            pil_img.size
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # STEP 1
+
+
+
+
+
+
+
+        # QUALITY CHECK
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        quality = check_quality(pil_img)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if not quality["passed"]:
+
+
+
+
+
+
+
+            quality_feedback = {
+
+
+
+
+
+
+
+                "too_dark": (
+                    "Light is not enough",
+                    "The area is too dark to examine your dog's skin properly.",
+                    [
+                        "Turn on the torch or move to a brighter place.",
+                        "Taking the photo in natural daylight gives the best result."
+                    ]
+                ),
+                "too_bright": (
+                    "Too much bright light",
+                    "Strong glare or reflection is covering the skin details.",
+                    [
+                        "Turn off camera flash to avoid direct reflection.",
+                        "Take the photo from a slight angle without direct strong light."
+                    ]
+                ),
+                "blurred_image": (
+                    "Photo is a bit blurry",
+                    "We can't see the skin clearly because the camera was moving or out of focus.",
+                    [
+                        "Hold your phone steady and tap the screen to focus.",
+                        "Keep your dog calm for 2 seconds and take a close-up photo."
+                    ]
+                ),
+
+
+
+
+
+
+
+            }
+
+
+
+
+
+
+
+            title, message, instructions = quality_feedback.get(
+
+
+
+
+
+
+
+                quality["reason"],
+
+
+
+
+
+
+
+                ("Photo needs improvement", "The skin details are not clear enough to analyze.", ["Take a clear photo of the affected skin area."])
+
+
+
+
+
+
+
+            )
+
+
+
+
+
+
+
+            return jsonify({
+
+
+
+
+
+
+
+                "status": "rejected",
+
+
+
+
+
+
+
+                "reason": quality["reason"],
+
+
+
+
+
+
+
+                "title": title,
+
+
+
+
+
+
+
+                "message": message,
+
+
+
+
+
+
+
+                "instructions": instructions,
+
+
+
+
+
+
+
+                "canRetry": True,
+
+
+
+
+
+
+
+                "quality": quality,
+
+
+
+
+
+
+
+                "gradCam": None,
+
+
+
+
+
+
+
+                "gradcam_image": ""
+
+
+
+
+
+
+
+            }), 200
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # STEP 2
+
+
+
+
+
+
+
+        # ORIGINAL DERMPAW DOG CHECK
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        dog_check = check_dog(pil_img)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if not dog_check["passed"]:
+
+
+
+
+
+
+
+            # Keep the technical reason in the server terminal only.
+
+
+
+
+
+
+
+            print("\nREJECTED: DOG CHECK FAILED")
+
+
+
+
+
+
+
+            print("Reason:", dog_check["reason"])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # One user-facing response for any photo where a dog cannot be verified.
+            reason = "dog_skin_photo_required"
+            title = "Dog's skin not detected"
+            message = (
+                "DermPaw AI only analyzes dog skin issues. "
+                "We couldn't recognize your dog in this photo."
+            )
+            instructions = [
+                "Point the camera directly at your dog's affected skin area.",
+                "Avoid taking photos of clothes, humans, floors, or other animals."
+            ]
+
+            return jsonify({
+                "status": "rejected",
+                "reason": reason,
+                "title": title,
+                "message": message,
+                "instructions": instructions,
+                "canRetry": True,
+                "quality": quality,
+                "gradCam": None,
+                "gradcam_image": ""
+            }), 200
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # STEP 3
+
+
+
+
+
+
+
+        # FULL IMAGE E3 SAFETY
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        safety = full_image_e3_checks(pil_img)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # OOD
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if safety["isOOD"]:
+
+
+
+
+
+
+
+            print("\nREJECTED: OUT OF DISTRIBUTION")
+
+
+
+
+
+
+
+            print("OOD score:", round(safety["oodScore"], 6))
+
+
+
+
+
+
+
+            print("OOD threshold:", round(OOD_THRESHOLD, 6))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            return jsonify({
+
+
+
+
+
+
+
+                "status": "rejected",
+
+
+
+
+
+
+
+                "reason": "image_not_suitable",
+                "title": "Move a bit closer",
+                "message": (
+                    "The camera is too far to clearly see the skin rash or wound. "
+                    "Please take a closer photo of the affected area."
+                ),
+                "instructions": [
+                    "Bring the phone 15–30 cm closer to the skin.",
+                    "Gently part the fur so the skin problem is clearly visible."
+                ],
+
+
+
+
+
+
+
+                "canRetry": True,
+
+
+
+
+
+
+
+                "quality": quality,
+
+
+
+
+
+
+
+                "gradCam": None,
+
+
+
+
+
+
+
+                "gradcam_image": ""
+
+
+
+
+
+
+
+            }), 200
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # LOW CONFIDENCE
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if safety["lowConfidence"]:
+
+
+
+
+
+
+
+            print("\nREJECTED: LOW CONFIDENCE")
+
+
+
+
+
+
+
+            print("Confidence:", round(safety["confidence"], 6))
+
+
+
+
+
+
+
+            print("Threshold:", round(CONF_THRESHOLD, 6))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            return jsonify({
+
+
+
+
+
+
+
+                "status": "rejected",
+
+
+
+
+
+
+
+                "reason": "low_confidence",
+                "title": "Need a clearer angle",
+                "message": (
+                    "We couldn't confirm the skin condition from this angle. "
+                    "Try another photo with better focus."
+                ),
+                "instructions": [
+                    "Try another photo from a slightly different angle.",
+                    "If your pet is in pain or scratching heavily, please consult a vet doctor."
+                ],
+
+
+
+
+
+
+
+                "canRetry": True,
+
+
+
+
+
+
+
+                "quality": quality,
+
+
+
+
+
+
+
+                "gradCam": None,
+
+
+
+
+
+
+
+                "gradcam_image": ""
+
+
+
+
+
+
+
+            }), 200
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # HIGH ENTROPY
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if safety["highEntropy"]:
+
+
+
+
+
+
+
+            print("\nREJECTED: HIGH ENTROPY")
+
+
+
+
+
+
+
+            print("Entropy:", round(safety["entropy"], 6))
+
+
+
+
+
+
+
+            print("Threshold:", round(ENTROPY_THRESHOLD, 6))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            return jsonify({
+
+
+
+
+
+
+
+                "status": "rejected",
+
+
+
+
+
+
+
+                "reason": "ambiguous_categories",
+                "title": "Need a clearer angle",
+                "message": (
+                    "The skin symptoms look mixed from this angle. "
+                    "A clearer photo is needed for an accurate result."
+                ),
+                "instructions": [
+                    "Make sure the skin spot is clearly visible in good light.",
+                    "Try a closer, focused photo without blur."
+                ],
+
+
+
+
+
+
+
+                "canRetry": True,
+
+
+
+
+
+
+
+                "quality": quality,
+
+
+
+
+
+
+
+                "gradCam": None,
+
+
+
+
+
+
+
+                "gradcam_image": ""
+
+
+
+
+
+
+
+            }), 200
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # STEP 4
+
+
+
+
+
+
+
+        # SIX-CROP E3 CLASSIFICATION
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        result = multicrop_predict(
+
+
+
+
+
+
+
+            pil_img
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        disease = result[
+
+
+
+
+
+
+
+            "disease"
+
+
+
+
+
+
+
+        ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        disease_info = DISEASE_INFO.get(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            disease,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            {}
+
+
+
+
+
+
+
+        )
+
+        final_index = result.get("class_index", CLASS_NAMES.index(disease) if disease in CLASS_NAMES else 0)
+        try:
+            gradcam_image = generate_gradcam(pil_img, final_index)
+        except Exception as gc_err:
+            print("[GRAD-CAM PREDICT ERROR]", gc_err)
+            gradcam_image = ""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # FINAL LOG
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+            "\nFINAL RESULT"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "Disease:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            disease
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "Confidence:",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            result[
+
+
+
+
+
+
+
+                "confidence"
+
+
+
+
+
+
+
+            ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "%"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+        # FINAL RESPONSE
+
+
+
+
+
+
+
+        # ====================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        return jsonify({
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "status":
+
+
+
+
+
+
+
+                "predicted",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "disease":
+
+
+
+
+
+
+
+                disease,
+
+            "class_index":
+
+                final_index,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "confidence":
+
+
+
+
+
+
+
+                result[
+
+
+
+
+
+
+
+                    "confidence"
+
+
+
+
+
+
+
+                ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "allScores":
+
+
+
+
+
+
+
+                result[
+
+
+
+
+
+
+
+                    "allScores"
+
+
+
+
+
+
+
+                ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "diseaseInfo":
+
+
+
+
+
+
+
+                disease_info,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+            # Quality
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "quality":
+
+
+
+
+
+
+
+                quality,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+            # Original dog gate
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "animalCheck":
+
+
+
+
+
+
+
+                dog_check,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+            # Full-image E3 checks
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "safetyChecks": {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "fullImageClass":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    safety[
+
+
+
+
+
+
+
+                        "predictedClass"
+
+
+
+
+
+
+
+                    ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "fullImageConfidence":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        safety[
+
+
+
+
+
+
+
+                            "confidence"
+
+
+
+
+
+
+
+                        ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        * 100.0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        2
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "confidenceThreshold":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        CONF_THRESHOLD
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        * 100.0,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        2
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "normalizedEntropy":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        safety[
+
+
+
+
+
+
+
+                            "entropy"
+
+
+
+
+
+
+
+                        ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        6
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "entropyThreshold":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        ENTROPY_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        6
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "oodScore":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        safety[
+
+
+
+
+
+
+
+                            "oodScore"
+
+
+
+
+
+
+
+                        ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        6
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "oodThreshold":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        OOD_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        6
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "passed":
+
+
+
+
+
+
+
+                    True
+
+
+
+
+
+
+
+            },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+            # OOD compatibility response
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "ood": {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "score":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        safety[
+
+
+
+
+
+
+
+                            "oodScore"
+
+
+
+
+
+
+
+                        ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        6
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "threshold":
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    round(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        OOD_THRESHOLD,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                        6
+
+
+
+
+
+
+
+                    ),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                "isOOD":
+
+
+
+
+
+
+
+                    False
+
+
+
+
+
+
+
+            },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+            # Crop information
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "cropResults":
+
+
+
+
+
+
+
+                result[
+
+
+
+
+
+
+
+                    "cropResults"
+
+
+
+
+
+
+
+                ],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+            # Preserve Node response schema
+
+
+
+
+
+
+
+            # --------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "gradCam":
+
+                gradcam_image,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "gradcam_image":
+
+                gradcam_image
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        }), 200
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    except Exception as error:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+
+
+
+
+            "\nPREDICTION ERROR:"
+
+
+
+
+
+
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        print(
+
+
+
+            repr(error)
+
+
+
+        )
+
+
+
+        traceback.print_exc()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        return jsonify({
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "status":
+
+
+
+
+
+
+
+                "error",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "reason":
+
+
+
+
+
+
+
+                "internal_error",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            "message":
+
+
+
+
+
+
+
+                "An internal prediction error occurred."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        }), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+# 27. GRAD-CAM
+
+
+
+
+
+
+
+# ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@app.route("/gradcam", methods=["POST"])
+def gradcam():
+    """
+    Standalone Grad-CAM endpoint.
+    Accepts multipart/form-data with field 'image'.
+    Optional form field 'class_index' (int).
+    """
+    try:
+        if "image" not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No image field in request."
+            }), 400
+
+        file = request.files["image"]
+        pil_img = Image.open(file.stream).convert("RGB")
+
+        class_index_override = None
+        if request.form.get("class_index") is not None:
+            try:
+                class_index_override = int(request.form.get("class_index"))
+            except Exception:
+                pass
+
+        gradcam_data_uri = generate_gradcam(pil_img, class_index_override)
+
+        if not gradcam_data_uri:
+            return jsonify({
+                "status": "error",
+                "message": "Could not compute Grad-CAM heatmap for this image."
+            }), 500
+
+        target_class = (
+            class_index_override
+            if (class_index_override is not None and 0 <= class_index_override < NUM_CLASSES)
+            else 0
+        )
+        class_name = CLASS_NAMES[target_class] if 0 <= target_class < len(CLASS_NAMES) else "unknown"
+
+        return jsonify({
+            "status": "success",
+            "gradcam_image": gradcam_data_uri,
+            "class_index": target_class,
+            "class_name": class_name,
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Grad-CAM failed: {str(e)}"
+        }), 500
+
+
+# ============================================================
+# 28. START SERVER
+# ============================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    print("\n" + "=" * 70)
+    print("DERMPAW AI SERVER READY")
+    print("=" * 70)
+    print("\nStarting Flask server on port 5000...\n")
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=False
+    )
+
+

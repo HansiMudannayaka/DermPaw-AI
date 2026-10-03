@@ -1,12 +1,16 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
+const Consultation = require("../models/Consultation");
+const Message = require("../models/Message");
 const bcrypt = require("bcryptjs");
+const protect = require("../middleware/authMiddleware");
 
 // Test route
 router.get("/test", (req, res) => {
   res.json({ message: "Doctor routes working!" });
 });
+
 
 // GET all doctors
 router.get("/", async (req, res) => {

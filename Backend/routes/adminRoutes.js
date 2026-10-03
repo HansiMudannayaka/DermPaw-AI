@@ -5,6 +5,7 @@ const adminProtect = require("../middleware/adminMiddleware");
 const User = require("../models/User");
 const Pet = require("../models/Pet");
 const Scan = require("../models/Scan");
+const Consultation = require("../models/Consultation");
 
 // All admin routes must be protected and restricted to admin
 // router.use(protect, adminProtect); // TODO: Re-enable when Admin Login is built on frontend!
@@ -19,8 +20,8 @@ router.get("/dashboard", async (req, res) => {
     const totalScans = await Scan.countDocuments();
     const totalDetections = await Scan.countDocuments({ disease: { $ne: "healthy" } });
     
-    // We can mock reviews for now or return 0 if no reviews model exists
-    const totalReviews = 48;
+    // Real count of approved consultations/reviews
+    const totalReviews = await Consultation.countDocuments({ status: "approved" });
 
     // 2. Get Disease Distribution
     const diseaseDistribution = await Scan.aggregate([
@@ -54,19 +55,33 @@ router.get("/dashboard", async (req, res) => {
       };
     });
 
-    // 4. Trend Chart (Scans over last 7 days)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    // 4. Trend Chart (Daily / Weekly / Monthly)
+    const period = (req.query.period || "daily").toLowerCase();
+    const now = new Date();
+    let startDate = new Date();
+    let groupFormat = "%Y-%m-%d";
+
+    if (period === "weekly") {
+      startDate.setDate(now.getDate() - 28); // last 4 weeks
+      groupFormat = "%Y-W%V";
+    } else if (period === "monthly") {
+      startDate.setMonth(now.getMonth() - 6); // last 6 months
+      groupFormat = "%Y-%m";
+    } else {
+      // daily (default)
+      startDate.setDate(now.getDate() - 7); // last 7 days
+      groupFormat = "%Y-%m-%d";
+    }
 
     const trendData = await Scan.aggregate([
       {
         $match: {
-          createdAt: { $gte: sevenDaysAgo }
+          createdAt: { $gte: startDate }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          _id: { $dateToString: { format: groupFormat, date: "$createdAt" } },
           count: { $sum: 1 }
         }
       },
@@ -77,6 +92,7 @@ router.get("/dashboard", async (req, res) => {
 
     return res.status(200).json({
       success: true,
+      period,
       stats: {
         totalUsers,
         totalPets,
@@ -99,18 +115,75 @@ router.get("/dashboard", async (req, res) => {
 router.get("/predictions", async (req, res) => {
   try {
     const totalPredictions = await Scan.countDocuments();
-    const highRiskCases = await Scan.countDocuments({ status: "danger" });
-    const accuracyRate = "98.89%";
+    const accuracyRate = "95.42%";
 
-    const scans = await Scan.find()
-      .sort({ createdAt: -1 })
-      .populate("pet", "name");
+    const [scans, consultations] = await Promise.all([
+      Scan.find().sort({ createdAt: -1 }).populate("pet", "name"),
+      Consultation.find().sort({ createdAt: -1 }).populate("doctor", "name email specialization")
+    ]);
 
     const predictions = scans.map((scan) => {
-      let riskStatus = "Safe";
-      if (scan.status === "danger") riskStatus = "High Risk";
-      else if (scan.status === "warning") riskStatus = "Medium Risk";
-      else if (scan.disease !== "healthy") riskStatus = "Medium Risk";
+      const scanTime = new Date(scan.createdAt).getTime();
+
+      // Find matching consultation for this scan
+      const matchingConsult = consultations.find((c) => {
+        const consultTime = new Date(c.createdAt).getTime();
+        const samePet =
+          (c.pet && scan.pet && c.pet.toString() === scan.pet.toString()) ||
+          (c.petName && scan.petName && c.petName.trim().toLowerCase() === scan.petName.trim().toLowerCase());
+        
+        // Match if same pet within 1 hour or exact same disease
+        const sameDisease =
+          c.aiResult &&
+          c.aiResult.disease &&
+          scan.disease &&
+          c.aiResult.disease.trim().toLowerCase() === scan.disease.trim().toLowerCase();
+        
+        const timeDiff = Math.abs(consultTime - scanTime);
+        return samePet && (sameDisease || timeDiff <= 3600000);
+      });
+
+      let reviewStatus = "Pending";
+      let riskStatus = "Pending";
+      let doctorName = null;
+      let doctorAdvice = "";
+
+      if (matchingConsult) {
+        if (matchingConsult.doctor && matchingConsult.doctor.name) {
+          doctorName = matchingConsult.doctor.name;
+        }
+        doctorAdvice = matchingConsult.advice || "";
+
+        if (matchingConsult.status === "approved") {
+          reviewStatus = "Reviewed";
+
+          // Extract severity from doctor's advice
+          const severityMatch = doctorAdvice.match(/Severity:\s*([a-zA-Z]+)/i);
+          if (severityMatch) {
+            const sev = severityMatch[1].toLowerCase();
+            if (sev === "severe" || sev === "high") riskStatus = "High Risk";
+            else if (sev === "moderate" || sev === "medium") riskStatus = "Medium Risk";
+            else if (sev === "mild" || sev === "low") riskStatus = "Low Risk";
+            else riskStatus = "Safe";
+          } else {
+            // Default risk from scan status if doctor approved without explicit severity tag
+            if (scan.status === "danger") riskStatus = "High Risk";
+            else if (scan.status === "warning") riskStatus = "Medium Risk";
+            else if (scan.disease.toLowerCase() !== "healthy") riskStatus = "Medium Risk";
+            else riskStatus = "Safe";
+          }
+        } else if (matchingConsult.status === "rejected") {
+          reviewStatus = "Rejected";
+          riskStatus = "Safe";
+        } else {
+          reviewStatus = "Pending";
+          riskStatus = "Pending";
+        }
+      } else {
+        // No consultation requested/completed yet -> Pending review
+        reviewStatus = "Pending";
+        riskStatus = "Pending";
+      }
 
       return {
         id: scan._id,
@@ -118,15 +191,23 @@ router.get("/predictions", async (req, res) => {
         disease: scan.disease.charAt(0).toUpperCase() + scan.disease.slice(1),
         confidence: scan.confidence || 90,
         status: riskStatus,
+        reviewStatus,
+        doctor: doctorName,
+        doctorAdvice,
+        aiInitialStatus: scan.status,
         time: new Date(scan.createdAt).toLocaleString(),
       };
     });
+
+    const highRiskCases = predictions.filter((p) => p.status === "High Risk").length;
+    const pendingReviews = predictions.filter((p) => p.reviewStatus === "Pending").length;
 
     return res.status(200).json({
       success: true,
       stats: {
         totalPredictions,
         highRiskCases,
+        pendingReviews,
         accuracyRate,
       },
       predictions,

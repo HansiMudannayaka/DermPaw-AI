@@ -4,12 +4,26 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 
 /* =========================
-   GET ALL DOCTORS
+   GET ALL USERS (filter by role on client)
 ========================= */
 router.get("/", async (req, res) => {
   try {
-    const doctors = await User.find({ role: "doctor" }).select("-password");
-    res.json(doctors);
+    const users = await User.find().select("-password");
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+/* =========================
+   GET USER BY ID
+========================= */
+router.get("/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    res.json({ success: true, user, ...user.toObject() });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -38,7 +52,7 @@ router.post("/", async (req, res) => {
       specialization,
       experience,
       licenseNo,
-      role ,
+      role: req.body.role || "doctor",
     });
 
     await doctor.save();
@@ -54,17 +68,33 @@ router.post("/", async (req, res) => {
 });
 
 /* =========================
-   UPDATE DOCTOR
+   UPDATE USER (doctor or owner)
 ========================= */
 router.put("/:id", async (req, res) => {
   try {
+    const allowedFields = [
+      "name", "username", "email", "specialization", "experience", "licenseNo",
+      "clinic", "phone", "location", "bio", "image", "profileImage", "rating", "reviews", "status"
+    ];
+
+    const updateData = {};
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    });
+
     const updated = await User.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true }
     ).select("-password");
 
-    res.json(updated);
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    res.json({ success: true, user: updated, ...updated.toObject() });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

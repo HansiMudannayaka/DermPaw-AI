@@ -25,6 +25,10 @@ const scanSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    gradCamImage: {
+      type: String,
+      default: "",
+    },
     pet: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pet",
@@ -32,6 +36,14 @@ const scanSchema = new mongoose.Schema(
     petName: {
       type: String,
       default: "",
+    },
+    allScores: {
+      type: Object,
+      default: {},
+    },
+    diseaseInfo: {
+      type: Object,
+      default: {},
     },
   },
   {

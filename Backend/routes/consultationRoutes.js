@@ -7,10 +7,10 @@ const protect = require("../middleware/authMiddleware");
 // ================= SUBMIT REQUEST (OWNER) =================
 router.post("/", protect, async (req, res) => {
   try {
-    const { doctorId, petName, petImage, aiResult } = req.body;
+    const { doctorId, petId, petName, petBreed, petImage, aiResult } = req.body;
 
-    if (!doctorId || !petName) {
-      return res.status(400).json({ success: false, message: "Doctor ID and Pet Name are required" });
+    if (!doctorId || (!petName && !petId)) {
+      return res.status(400).json({ success: false, message: "Doctor ID and Pet information are required" });
     }
 
     // Check if doctor exists and is actually a doctor
@@ -19,11 +19,27 @@ router.post("/", protect, async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid veterinarian not found" });
     }
 
+    let finalPetName = petName;
+    let finalPetImage = petImage;
+    let finalPetBreed = petBreed;
+
+    if (petId) {
+      const Pet = require("../models/Pet");
+      const petDoc = await Pet.findById(petId);
+      if (petDoc) {
+        if (!finalPetName) finalPetName = petDoc.name;
+        if (!finalPetImage && petDoc.image) finalPetImage = petDoc.image;
+        if (!finalPetBreed && petDoc.description) finalPetBreed = petDoc.description;
+      }
+    }
+
     const consultation = new Consultation({
       doctor: doctorId,
       owner: req.user._id,
-      petName,
-      petImage: petImage || "",
+      pet: petId || null,
+      petName: finalPetName || "My Dog",
+      petBreed: finalPetBreed || "Dog",
+      petImage: finalPetImage || "",
       aiResult: aiResult || {},
       status: "pending",
     });
@@ -39,8 +55,17 @@ router.post("/", protect, async (req, res) => {
 // ================= GET OWNER HISTORY (OWNER) =================
 router.get("/owner", protect, async (req, res) => {
   try {
-    const consultations = await Consultation.find({ owner: req.user._id })
-      .populate("doctor", "name email specialization experience licenseNo")
+    const filter = { owner: req.user._id };
+    if (req.query.petId) {
+      filter.$or = [
+        { pet: req.query.petId },
+        { petName: req.query.petName || "" }
+      ];
+    }
+
+    const consultations = await Consultation.find(filter)
+      .populate("doctor", "name username email specialization experience licenseNo image profileImage clinic phone location bio rating reviews")
+      .populate("pet", "name age weight gender color description image")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({ success: true, consultations });
@@ -58,7 +83,8 @@ router.get("/doctor", protect, async (req, res) => {
     }
 
     const consultations = await Consultation.find({ doctor: req.user._id })
-      .populate("owner", "username email name")
+      .populate("owner", "username email name phone location image profileImage")
+      .populate("pet", "name age weight gender color description image")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({ success: true, consultations });

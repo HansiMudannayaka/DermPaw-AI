@@ -12,10 +12,18 @@ const consultationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    pet: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Pet",
+    },
     petName: {
       type: String,
       required: true,
       trim: true,
+    },
+    petBreed: {
+      type: String,
+      default: "Dog",
     },
     petImage: {
       type: String,
