@@ -1,14 +1,149 @@
 @tailwind base;
-@tailwind components;
 @tailwind utilities;
+@tailwind components;
 
-html,
-body,
-#root {
-  min-height: 100%;
+/* =====================================================
+   CORE LAYOUT — no scroll jitter, no page shake
+===================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Reserve scrollbar space so page width NEVER changes */
+  scrollbar-gutter: stable;
+  /* No scroll on html itself — layout handles it */
+  overflow: hidden;
+  height: 100%;
 }
 
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden; /* body also locked — main scrolls */
   font-family: Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent text from causing sub-pixel jitter */
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* =====================================================
+   GPU ISOLATION — sidebar, navbar, cards never
+   trigger a full-page layout reflow on hover/animate
+===================================================== */
+
+/* Sidebar and Navbar: isolated GPU layers */
+aside {
+  contain: layout style paint;
+  will-change: auto;
+  transform: translateZ(0);
+}
+
+header {
+  contain: layout style;
+  transform: translateZ(0);
+}
+
+/* Main scroll area — only this scrolls, nothing else moves */
+main {
+  /* Always show scrollbar — prevents width shift on content change */
+  overflow-y: scroll;
+  overflow-x: hidden;
+  /* GPU composited scroll — no jitter */
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  /* Isolate from parent reflows */
+  contain: strict;
+  /* Prevent content changes from shifting scroll position */
+  overscroll-behavior: contain;
+}
+
+/* =====================================================
+   HOVER EFFECTS — GPU only, zero layout impact
+   translateY moves on GPU compositor thread.
+   No top/margin/padding changes that cause reflow.
+===================================================== */
+
+.stat-card {
+  /* Promote to GPU layer permanently — hover won't cause
+     parent to reflow when translate kicks in */
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  /* Isolate paint — changes stay inside the card */
+  contain: layout style;
+}
+
+/* Isolate all interactive cards from page layout */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* =====================================================
+   CUSTOM SCROLLBAR — thin purple, no width jitter
+===================================================== */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(138, 43, 226, 0.3);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 43, 226, 0.55);
+}
+
+/* =====================================================
+   DERMPAW DARK MODE — explicit overrides
+===================================================== */
+
+.dark body,
+.dark #root {
+  background-color: #0d0618;
+  color: #f0e8ff;
+}
+
+.dark .card-dark,
+.dark [class*="dark:bg-\[#160D2B\]"],
+.dark [class*="dark:bg-\[#1A0F32\]"] {
+  background-color: #160d2b;
+}
+
+.dark .stat-card {
+  background-color: #160d2b !important;
+  border-color: rgba(139, 43, 226, 0.25) !important;
+}
+
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #1a0f32;
+  color: #f0e8ff;
+  border-color: #3d1a6e;
+}
+
+.dark table {
+  background-color: #160d2b;
+}
+
+.dark tr:hover {
+  background-color: rgba(75, 0, 130, 0.1);
 }
