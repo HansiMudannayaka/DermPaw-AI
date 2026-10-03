@@ -28,6 +28,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 /* ================= COLORS ================= */
 
@@ -42,6 +43,7 @@ export default function DailyReportsScreen({
   navigation,
 }) {
   const [reports, setReports] = useState([]);
+  const [activePet, setActivePet] = useState(null);
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
@@ -61,18 +63,39 @@ export default function DailyReportsScreen({
     return "#EF4444";
   };
 
-  // Fetch reports from backend
+  // Fetch reports from backend (filtered by active pet)
   const fetchReports = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
-      const res = await fetch("http://172.20.10.4:8000/api/scans", {
+      const storedActivePet = await AsyncStorage.getItem("activePet");
+      let currentPet = null;
+      if (storedActivePet) {
+        currentPet = JSON.parse(storedActivePet);
+        setActivePet(currentPet);
+      }
+
+      const url = currentPet?._id 
+        ? `${BACKEND_URL}/api/scans?petId=${currentPet._id}&petName=${encodeURIComponent(currentPet.name || '')}`
+        : `${BACKEND_URL}/api/scans`;
+
+      const res = await fetch(url, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
       });
       const data = await res.json();
       if (data.success) {
-        const list = (data.scans || []).map(item => {
+        let scans = data.scans || [];
+        // If an active pet is selected, filter strictly for this pet
+        if (currentPet?._id) {
+          scans = scans.filter(item => 
+            item.pet === currentPet._id || 
+            item.pet?._id === currentPet._id || 
+            (item.petName && item.petName.toLowerCase() === currentPet.name?.toLowerCase())
+          );
+        }
+
+        const list = scans.map(item => {
           const d = new Date(item.createdAt);
           return {
             id: item._id,
@@ -93,8 +116,12 @@ export default function DailyReportsScreen({
   };
 
   useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      fetchReports();
+    });
     fetchReports();
-  }, []);
+    return unsubscribe;
+  }, [navigation]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -191,20 +218,33 @@ export default function DailyReportsScreen({
             Daily Reports
           </Text>
 
-          <Text style={styles.subHeader}>
-            AI generated skin analysis
-            history
-          </Text>
+          {activePet ? (
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2, gap: 4 }}>
+              <Ionicons name="paw" size={13} color={SECONDARY} />
+              <Text style={{ fontSize: 13, color: PRIMARY, fontWeight: "700" }}>
+                {activePet.name}'s Records
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.subHeader}>
+              AI generated skin analysis history
+            </Text>
+          )}
         </View>
 
         <TouchableOpacity
           style={styles.notificationBtn}
+          onPress={() => navigation.navigate("PetProfile")}
         >
-          <Ionicons
-            name="notifications-outline"
-            size={22}
-            color={PRIMARY}
-          />
+          {activePet?.image ? (
+            <Image source={{ uri: activePet.image }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+          ) : (
+            <Ionicons
+              name="paw"
+              size={20}
+              color={PRIMARY}
+            />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -303,7 +343,7 @@ export default function DailyReportsScreen({
 
       <FlatList
         data={Object.keys(grouped)}
-        keyExtractor={(item) => item}
+        keyExtractor={(item, index) => String(item || index)}
         showsVerticalScrollIndicator={
           false
         }
@@ -327,12 +367,13 @@ export default function DailyReportsScreen({
             />
 
             <Text style={styles.emptyTitle}>
-              No Reports Found
+              {activePet ? `No Reports for ${activePet.name}` : "No Reports Found"}
             </Text>
 
             <Text style={styles.emptyDesc}>
-              No reports match your
-              current filter.
+              {activePet
+                ? `No AI skin scan reports have been saved for ${activePet.name} yet.`
+                : "No reports match your current filter."}
             </Text>
           </View>
         }
@@ -343,9 +384,9 @@ export default function DailyReportsScreen({
             </Text>
 
             {grouped[date].map(
-              (report) => (
+              (report, rIdx) => (
                 <TouchableOpacity
-                  key={report.id}
+                  key={report._id?.toString() || report.id?.toString() || String(rIdx)}
                   activeOpacity={0.9}
                   style={styles.card}
                   onPress={() =>

@@ -32,16 +32,18 @@ export default function OwnerSummaryScreen({ route, navigation }) {
   const { consultation } = route.params || {};
 
   // Extract from real consultation document
-  const petName = consultation?.petName || route.params?.petName || "Luna";
+  const petName = consultation?.pet?.name || consultation?.petName || route.params?.petName || "My Dog";
   
   let petImage = route.params?.petImage || require("../../../assets/images/dog1.png");
-  if (consultation?.petImage && consultation.petImage.startsWith("http")) {
+  if (consultation?.pet?.image && (consultation.pet.image.startsWith("http") || consultation.pet.image.startsWith("data:"))) {
+    petImage = { uri: consultation.pet.image };
+  } else if (consultation?.petImage && (consultation.petImage.startsWith("http") || consultation.petImage.startsWith("data:"))) {
     petImage = { uri: consultation.petImage };
   }
 
-  const breed = "Golden Retriever"; // fallback
-  const age = "2Y"; // fallback
-  const gender = "Female"; // fallback
+  const breed = consultation?.pet?.description || consultation?.petBreed || "Dog";
+  const age = consultation?.pet?.age || "2Y";
+  const gender = consultation?.pet?.gender || "Female";
 
   const disease = consultation?.aiResult?.disease || route.params?.disease || "Skin Scan";
   const conf = consultation?.aiResult?.confidence || 50;
@@ -72,13 +74,13 @@ export default function OwnerSummaryScreen({ route, navigation }) {
   }
 
   const doctor = {
-    doctorName: consultation?.doctor?.name || route.params?.doctor || "Dr. Anjali Perera",
-    clinic: consultation?.doctor?.specialization || "Negombo Veterinary Clinic",
-    experience: consultation?.doctor?.experience || "8 Years Experience",
-    specialization: consultation?.doctor?.specialization || "Dermatology Specialist",
-    phone: consultation?.doctor?.email || "+94 77 123 4567",
-    location: "Colombo, Sri Lanka",
-    image: consultation?.doctor?.image || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
+    doctorName: consultation?.doctor?.name || consultation?.doctor?.username || route.params?.doctor || "Dr. Veterinarian",
+    clinic: consultation?.doctor?.clinic || consultation?.doctor?.specialization || "Veterinary Clinic",
+    experience: consultation?.doctor?.experience || "5 Years Experience",
+    specialization: consultation?.doctor?.specialization || "Veterinary Specialist",
+    phone: consultation?.doctor?.phone || consultation?.doctor?.email || "+94 77 123 4567",
+    location: consultation?.doctor?.location || "Colombo, Sri Lanka",
+    image: consultation?.doctor?.image || consultation?.doctor?.profileImage || "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
   };
 
   const severityStyle = getSeverityStyle(severity);
@@ -102,12 +104,6 @@ export default function OwnerSummaryScreen({ route, navigation }) {
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Pet Health Report</Text>
-
-        <Ionicons
-          name="notifications-outline"
-          size={22}
-          color={PRIMARY}
-        />
       </View>
 
       {/* ================= PET CARD ================= */}
@@ -135,13 +131,9 @@ export default function OwnerSummaryScreen({ route, navigation }) {
         activeOpacity={0.9}
         onPress={() =>
           navigation.navigate("DoctorPetProfile", {
-            doctorName: doctor.doctorName,
-            experience: doctor.experience,
-            specialization: doctor.specialization,
-            clinic: doctor.clinic,
-            phone: doctor.phone,
-            location: doctor.location,
-            image: doctor.image,
+            doctor: consultation?.doctor || doctor,
+            consultation: consultation,
+            consultationId: consultation?._id,
           })
         }
       >
@@ -250,6 +242,29 @@ export default function OwnerSummaryScreen({ route, navigation }) {
         <TouchableOpacity
           style={styles.actionButton}
           onPress={() =>
+            navigation.navigate("PetOwnerChatScreen", {
+              doctorId: consultation?.doctor?._id || consultation?.doctor?.id || consultation?.doctor,
+              doctorName: doctor.doctorName,
+              doctorImage: doctor.image,
+              phone: doctor.phone,
+              consultationId: consultation?._id,
+              consultation: consultation,
+            })
+          }
+        >
+          <Ionicons
+            name="chatbubbles-outline"
+            size={20}
+            color={PRIMARY}
+          />
+          <Text style={styles.actionText}>
+            Chat with Doctor
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() =>
             navigation.navigate("OwnerArticles", {
               disease,
               petName,
@@ -262,7 +277,7 @@ export default function OwnerSummaryScreen({ route, navigation }) {
             color={PRIMARY}
           />
           <Text style={styles.actionText}>
-            Find Related Articles
+            Related Articles
           </Text>
         </TouchableOpacity>
 
@@ -281,7 +296,7 @@ export default function OwnerSummaryScreen({ route, navigation }) {
             color={PRIMARY}
           />
           <Text style={styles.actionText}>
-            Find Veterinarians
+            Find Doctors
           </Text>
         </TouchableOpacity>
       </View>

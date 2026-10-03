@@ -26,7 +26,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
 
-const TABS = ["All", "High", "Normal"];
+const TABS = ["All", "Pending", "Reviewed"];
 const TAB_WIDTH = (width - 40) / 3;
 
 /* =========================
@@ -150,6 +150,12 @@ const ReviewCard = React.memo(
       }).start();
     };
 
+    const isItemReviewed =
+      item.status === "approved" ||
+      item.status === "reviewed" ||
+      item.status === "completed" ||
+      Boolean(item.original?.advice);
+
     return (
       <Animated.View
         style={{
@@ -203,39 +209,32 @@ const ReviewCard = React.memo(
             </View>
 
             <View style={styles.right}>
+              <View
+                style={[
+                  styles.statusTag,
+                  isItemReviewed ? styles.reviewedStatusTag : styles.pendingStatusTag,
+                ]}
+              >
+                <Ionicons
+                  name={isItemReviewed ? "checkmark-circle" : "time-outline"}
+                  size={11}
+                  color={isItemReviewed ? "#16A34A" : "#D97706"}
+                />
+                <Text
+                  style={[
+                    styles.statusTagText,
+                    isItemReviewed ? styles.reviewedStatusText : styles.pendingStatusText,
+                  ]}
+                >
+                  {isItemReviewed ? "Reviewed" : "Pending"}
+                </Text>
+              </View>
+
               <Text style={styles.time}>
                 {getTimeAgo(
                   item.createdAt
                 )}
               </Text>
-
-              <View
-                style={[
-                  styles.priorityTag,
-                  {
-                    backgroundColor:
-                      priority.bg,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={priority.icon}
-                  size={12}
-                  color={priority.text}
-                />
-
-                <Text
-                  style={[
-                    styles.priorityText,
-                    {
-                      color:
-                        priority.text,
-                    },
-                  ]}
-                >
-                  {item.priority}
-                </Text>
-              </View>
             </View>
           </View>
 
@@ -324,23 +323,34 @@ const ReviewCard = React.memo(
           {/* FOOTER */}
           <View style={styles.cardFooter}>
             <TouchableOpacity
-              style={styles.reviewBtn}
+              style={[
+                styles.reviewBtn,
+                isItemReviewed && styles.viewReviewBtn,
+              ]}
               onPress={() =>
                 onPress(item)
               }
             >
+              <Ionicons
+                name={isItemReviewed ? "eye-outline" : "create-outline"}
+                size={14}
+                color={isItemReviewed ? "#16A34A" : "#4B0082"}
+                style={{ marginRight: 4 }}
+              />
+
               <Text
-                style={
-                  styles.reviewBtnText
-                }
+                style={[
+                  styles.reviewBtnText,
+                  isItemReviewed && styles.viewReviewBtnText,
+                ]}
               >
-                Review Case
+                {isItemReviewed ? "View Details" : "Review Case"}
               </Text>
 
               <Ionicons
                 name="arrow-forward"
                 size={14}
-                color="#4B0082"
+                color={isItemReviewed ? "#16A34A" : "#4B0082"}
               />
             </TouchableOpacity>
           </View>
@@ -354,11 +364,19 @@ const ReviewCard = React.memo(
    MAIN SCREEN
 ========================= */
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import { BACKEND_URL } from "../services/api";
+
+const DEFAULT_PET_IMAGE = require("../../../assets/images/dog1.png");
+
 export default function AIReviewScreen({
   navigation,
+  route,
 }) {
+  const initialFilter = route?.params?.filter || "Pending";
   const [activeTab, setActiveTab] =
-    useState("All");
+    useState(initialFilter);
 
   const [refreshing, setRefreshing] =
     useState(false);
@@ -366,8 +384,8 @@ export default function AIReviewScreen({
   const [isLoading, setIsLoading] =
     useState(false);
 
-  const [reviewData, setReviewData] =
-    useState([]);
+  const [pendingData, setPendingData] = useState([]);
+  const [reviewedData, setReviewedData] = useState([]);
 
   /* FILTER */
   const [filterVisible, setFilterVisible] =
@@ -380,74 +398,79 @@ export default function AIReviewScreen({
     new Animated.Value(0)
   ).current;
 
-  /* SAMPLE DATA */
-
-  const sampleData = [
-    {
-      id: 1,
-      name: "Luna",
-      breed: "Golden Retriever • 2Y",
-      issue: "Hot Spot",
-      confidence: "92%",
-      priority: "High",
-      createdAt: new Date(
-        Date.now() - 2 * 60 * 1000
-      ),
-      alert:
-        "Immediate attention recommended",
-      image: require("../../../assets/images/dog1.png"),
-    },
-
-    {
-      id: 2,
-      name: "Bella",
-      breed: "Labrador • 3Y",
-      issue: "Skin Infection",
-      confidence: "88%",
-      priority: "High",
-      createdAt: new Date(
-        Date.now() -
-          15 * 60 * 1000
-      ),
-      alert:
-        "Consultation recommended",
-      image: require("../../../assets/images/dog.png"),
-    },
-
-    {
-      id: 3,
-      name: "Max",
-      breed: "Beagle • 4Y",
-      issue: "Mild Dermatitis",
-      confidence: "75%",
-      priority: "Normal",
-      createdAt: new Date(
-        Date.now() -
-          2 * 60 * 60 * 1000
-      ),
-      alert: "",
-      image: require("../../../assets/images/dog2.png"),
-    },
-  ];
-
-  /* LOAD */
-
-  useEffect(() => {
-    loadReviewData();
-  }, []);
-
+  /* LOAD REAL DATA FROM BACKEND */
   const loadReviewData =
-    useCallback(async () => {
-      setIsLoading(true);
+    useCallback(async (isInitial = false) => {
+      try {
+        if (isInitial) setIsLoading(true);
+        const token = await AsyncStorage.getItem("token");
+        
+        const res = await fetch(`${BACKEND_URL}/api/consultations/doctor`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        const data = await res.json();
+        
+        if (data.success && Array.isArray(data.consultations)) {
+          const mapItem = (item) => {
+            const conf = item.aiResult?.confidence || 50;
+            const isHigh = conf > 85 || item.aiResult?.severity === "High" || item.severity === "High";
+            const priority = isHigh ? "High" : "Normal";
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, 700)
-      );
+            let img = DEFAULT_PET_IMAGE;
+            if (item.pet?.image && item.pet.image.startsWith("http")) {
+              img = { uri: item.pet.image };
+            } else if (item.petImage && item.petImage.startsWith("http")) {
+              img = { uri: item.petImage };
+            }
 
-      setReviewData(sampleData);
+            return {
+              id: item._id,
+              name: item.petName || "Pet",
+              breed: item.petBreed || "Dog • 2Y",
+              issue: item.aiResult?.disease || "Skin Scan",
+              confidence: `${conf}%`,
+              priority,
+              status: item.status,
+              createdAt: new Date(item.createdAt),
+              alert: isHigh ? "Immediate attention recommended" : "",
+              image: img,
+              original: item,
+            };
+          };
 
-      setIsLoading(false);
+          const pending = data.consultations
+            .filter((item) => item.status !== "approved" && item.status !== "reviewed" && item.status !== "completed")
+            .map(mapItem);
+
+          const reviewed = data.consultations
+            .filter((item) => item.status === "approved" || item.status === "reviewed" || item.status === "completed")
+            .map(mapItem);
+
+          setPendingData(pending);
+          setReviewedData(reviewed);
+        } else {
+          setPendingData([]);
+          setReviewedData([]);
+        }
+      } catch (err) {
+        console.log("Error loading AI reviews from server:", err);
+      } finally {
+        if (isInitial) setIsLoading(false);
+      }
     }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadReviewData(true);
+      const interval = setInterval(() => {
+        loadReviewData(false);
+      }, 3500);
+
+      return () => clearInterval(interval);
+    }, [loadReviewData])
+  );
 
   /* REFRESH */
 
@@ -464,87 +487,40 @@ export default function AIReviewScreen({
 
   /* FILTER DATA */
 
+  const allData = useMemo(() => [...pendingData, ...reviewedData].sort((a, b) => b.createdAt - a.createdAt), [pendingData, reviewedData]);
+
+  const currentData = activeTab === "All" ? allData : activeTab === "Pending" ? pendingData : reviewedData;
+
   const filteredData = useMemo(() => {
-    let filtered =
-      activeTab === "All"
-        ? [...reviewData]
-        : reviewData.filter(
-            (item) =>
-              item.priority ===
-              activeTab
-          );
+    let filtered = [...currentData];
 
     switch (selectedFilter) {
       case "Newest":
-        filtered.sort(
-          (a, b) =>
-            b.createdAt -
-            a.createdAt
-        );
+        filtered.sort((a, b) => b.createdAt - a.createdAt);
         break;
-
       case "Oldest":
-        filtered.sort(
-          (a, b) =>
-            a.createdAt -
-            b.createdAt
-        );
+        filtered.sort((a, b) => a.createdAt - b.createdAt);
         break;
-
       case "Highest Confidence":
-        filtered.sort(
-          (a, b) =>
-            parseInt(
-              b.confidence
-            ) -
-            parseInt(
-              a.confidence
-            )
-        );
+        filtered.sort((a, b) => parseInt(b.confidence) - parseInt(a.confidence));
         break;
-
       case "Lowest Confidence":
-        filtered.sort(
-          (a, b) =>
-            parseInt(
-              a.confidence
-            ) -
-            parseInt(
-              b.confidence
-            )
-        );
+        filtered.sort((a, b) => parseInt(a.confidence) - parseInt(b.confidence));
         break;
-
       default:
         break;
     }
 
     return filtered;
-  }, [
-    reviewData,
-    activeTab,
-    selectedFilter,
-  ]);
+  }, [currentData, selectedFilter]);
 
   /* STATS */
 
-  const getStats = useMemo(() => {
-    const total = reviewData.length;
-
-    const high =
-      reviewData.filter(
-        (i) =>
-          i.priority === "High"
-      ).length;
-
-    const normal = total - high;
-
-    return {
-      total,
-      high,
-      normal,
-    };
-  }, [reviewData]);
+  const getStats = useMemo(() => ({
+    all: pendingData.length + reviewedData.length,
+    pending: pendingData.length,
+    reviewed: reviewedData.length,
+  }), [pendingData, reviewedData]);
 
   /* TAB ANIMATION */
 
@@ -563,9 +539,18 @@ export default function AIReviewScreen({
   const handleReviewPress =
     useCallback(
       (item) => {
+        const isReviewed = item.status === "approved" || item.status === "reviewed" || item.status === "completed";
         navigation.navigate(
           "AIResultDetail",
-          { item }
+          {
+            item,
+            consultation: item.original,
+            petName: item.name,
+            reviewId: item.id,
+            diagnosis: item.issue,
+            selectedTab: item.priority,
+            isReviewed,
+          }
         );
       },
       [navigation]
@@ -620,60 +605,57 @@ export default function AIReviewScreen({
         {/* STATS */}
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <Text
-              style={styles.statNumber}
-            >
-              {getStats.total}
-            </Text>
-
-            <Text style={styles.statLabel}>
-              Total
-            </Text>
+            <Text style={styles.statNumber}>{getStats.all}</Text>
+            <Text style={styles.statLabel}>All</Text>
           </View>
 
-          <View
-            style={styles.statDivider}
-          />
+          <View style={styles.statDivider} />
 
           <View style={styles.statItem}>
-            <Text
-              style={styles.statNumber}
-            >
-              {getStats.high}
-            </Text>
-
-            <Text style={styles.statLabel}>
-              High
-            </Text>
+            <Text style={styles.statNumber}>{getStats.pending}</Text>
+            <Text style={styles.statLabel}>Pending</Text>
           </View>
 
-          <View
-            style={styles.statDivider}
-          />
+          <View style={styles.statDivider} />
 
           <View style={styles.statItem}>
-            <Text
-              style={styles.statNumber}
-            >
-              {getStats.normal}
-            </Text>
-
-            <Text style={styles.statLabel}>
-              Normal
-            </Text>
+            <Text style={styles.statNumber}>{getStats.reviewed}</Text>
+            <Text style={styles.statLabel}>Reviewed</Text>
           </View>
         </View>
       </LinearGradient>
 
-      {/* TABS */}
-      <CustomTabs
-        tabs={TABS}
-        activeTab={activeTab}
-        onTabPress={setActiveTab}
-        translateX={translateX}
-      />
-
-      {/* CONTENT */}
+      {/* TAB SWITCHER */}
+      <View style={styles.tabSwitcher}>
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab;
+          const badgeCount =
+            tab === "All" ? getStats.all :
+            tab === "Pending" ? getStats.pending :
+            getStats.reviewed;
+          const badgeColor =
+            tab === "All" ? "#4B0082" :
+            tab === "Pending" ? "#DC2626" :
+            "#16A34A";
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+              onPress={() => setActiveTab(tab)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>
+                {tab}
+              </Text>
+              {badgeCount > 0 && (
+                <View style={[styles.tabBadge, { backgroundColor: isActive ? "#fff3" : badgeColor }]}>
+                  <Text style={[styles.tabBadgeText, isActive && { color: "#fff" }]}>{badgeCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
       <ScrollView
         contentContainerStyle={
           styles.scrollContent
@@ -946,6 +928,60 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
+  tabSwitcher: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 4,
+    backgroundColor: "#EDE9F6",
+    borderRadius: 14,
+    padding: 4,
+  },
+
+  tabBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 11,
+    gap: 6,
+  },
+
+  tabBtnActive: {
+    backgroundColor: "#4B0082",
+    elevation: 3,
+    shadowColor: "#4B0082",
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+
+  tabBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+  },
+
+  tabBtnTextActive: {
+    color: "#fff",
+  },
+
+  tabBadge: {
+    backgroundColor: "#DC2626",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+
+  tabBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
   card: {
     backgroundColor: "#fff",
     borderRadius: 20,
@@ -1005,7 +1041,37 @@ const styles = StyleSheet.create({
   time: {
     fontSize: 11,
     color: "#999",
-    marginBottom: 6,
+    marginTop: 4,
+  },
+
+  statusTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 4,
+  },
+
+  reviewedStatusTag: {
+    backgroundColor: "#DCFCE7",
+  },
+
+  pendingStatusTag: {
+    backgroundColor: "#FEF3C7",
+  },
+
+  statusTagText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  reviewedStatusText: {
+    color: "#16A34A",
+  },
+
+  pendingStatusText: {
+    color: "#D97706",
   },
 
   priorityTag: {
@@ -1093,11 +1159,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
 
+  viewReviewBtn: {
+    backgroundColor: "#DCFCE7",
+  },
+
   reviewBtnText: {
     color: "#4B0082",
     fontWeight: "700",
     marginRight: 5,
     fontSize: 12,
+  },
+
+  viewReviewBtnText: {
+    color: "#16A34A",
   },
 
   loadingContainer: {

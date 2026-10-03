@@ -1,20 +1,20 @@
-import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  Dimensions,
-  StatusBar,
-} from "react-native";
-import {
-  Ionicons,
-  MaterialCommunityIcons,
+    Ionicons,
+    MaterialCommunityIcons,
 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useEffect, useState } from "react";
+import {
+    Dimensions,
+    FlatList,
+    Image,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
 
 const PRIMARY = "#4B0082";
 const SECONDARY = "#8A2BE2";
@@ -35,7 +35,7 @@ export default function ArticlesScreen({ navigation }) {
   useEffect(() => {
     const fetchArticles = async () => {
       try {
-        const res = await fetch("http://172.20.10.4:8000/api/articles");
+        const res = await fetch("http://192.168.1.6:8000/api/articles");
         const data = await res.json();
         if (data.success) {
           setArticles(data.articles || []);
@@ -152,14 +152,6 @@ export default function ArticlesScreen({ navigation }) {
             Learn pet diseases & treatments
           </Text>
         </View>
-
-        <TouchableOpacity style={styles.notifyBtn}>
-          <Ionicons
-            name="notifications-outline"
-            size={20}
-            color={PRIMARY}
-          />
-        </TouchableOpacity>
       </View>
 
       {/* ================= HERO CARD ================= */}
@@ -214,7 +206,7 @@ export default function ArticlesScreen({ navigation }) {
 
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item._id || item.id}
+        keyExtractor={(item, index) => item._id?.toString() || item.id?.toString() || String(index)}
         renderItem={renderItem}
         numColumns={2}
         columnWrapperStyle={{
@@ -254,16 +246,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 3,
     marginRight: 12,
-  },
-
-  notifyBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 3,
   },
 
   headerTitle: {

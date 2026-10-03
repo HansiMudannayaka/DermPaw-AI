@@ -20,14 +20,15 @@ const BG = "#F4F5FA";
 export default function AddReviewScreen({ navigation, route }) {
   const { consultation } = route.params || {};
 
-  const initialDisease = consultation?.aiResult?.disease || "Hot Spot (Acute Moist Dermatitis)";
-  const isDefaultChoice = ["Hot Spot (Acute Moist Dermatitis)", "Ringworm"].includes(initialDisease);
+  const initialDisease = consultation?.aiResult?.disease || "Demodicosis";
+  const knownChoices = ["Demodicosis", "Dermatitis", "Ringworm"];
+  const isDefaultChoice = knownChoices.some(choice => initialDisease.toLowerCase().includes(choice.toLowerCase()));
 
-  const [selectedDiagnosis, setSelectedDiagnosis] = useState(
-    isDefaultChoice ? initialDisease : "Other"
-  );
+  const matchedChoice = knownChoices.find(choice => initialDisease.toLowerCase().includes(choice.toLowerCase())) || "Other";
+
+  const [selectedDiagnosis, setSelectedDiagnosis] = useState(matchedChoice);
   const [customDiagnosis, setCustomDiagnosis] = useState(
-    isDefaultChoice ? "" : initialDisease
+    matchedChoice === "Other" ? initialDisease : ""
   );
 
   const conf = consultation?.aiResult?.confidence || 50;
@@ -94,9 +95,16 @@ export default function AddReviewScreen({ navigation, route }) {
   };
 
   let petImage = require("../../../assets/images/dog1.png");
-  if (consultation?.petImage && consultation.petImage.startsWith("http")) {
+  if (consultation?.pet?.image && (consultation.pet.image.startsWith("http") || consultation.pet.image.startsWith("data:"))) {
+    petImage = { uri: consultation.pet.image };
+  } else if (consultation?.petImage && (consultation.petImage.startsWith("http") || consultation.petImage.startsWith("data:"))) {
     petImage = { uri: consultation.petImage };
   }
+
+  const petName = consultation?.pet?.name || consultation?.petName || "My Dog";
+  const petSub = consultation?.pet
+    ? `${consultation.pet.color || "Dog"} • ${consultation.pet.age || "2Y"} • ${consultation.pet.gender || "Male"}`
+    : `${consultation?.petBreed || "Dog"} • 2Y • Female`;
 
   return (
     <ScrollView
@@ -126,9 +134,9 @@ export default function AddReviewScreen({ navigation, route }) {
           style={styles.avatar}
         />
         <View>
-          <Text style={styles.petName}>{consultation?.petName || "Luna"}</Text>
+          <Text style={styles.petName}>{petName}</Text>
           <Text style={styles.petSub}>
-            Golden Retriever • 2Y • Female
+            {petSub}
           </Text>
         </View>
       </View>
@@ -139,7 +147,7 @@ export default function AddReviewScreen({ navigation, route }) {
 
         <Text style={styles.label}>Diagnosis</Text>
 
-        {["Hot Spot (Acute Moist Dermatitis)", "Ringworm", "Other"].map(
+        {["Demodicosis", "Dermatitis", "Ringworm", "Other"].map(
           (item) => {
             const active = selectedDiagnosis === item;
 

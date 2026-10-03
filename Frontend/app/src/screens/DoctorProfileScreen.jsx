@@ -1,29 +1,31 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
+  Alert,
   Animated,
   Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // NEW
+import { BACKEND_URL } from "../services/api";
 
 const { width } = Dimensions.get("window");
 
-// NEW: same backend host used by VetDoctors.jsx / LoginScreen.js
-const API_URL = "http://172.20.10.4:8000";
+const API_URL = BACKEND_URL || "http://192.168.1.6:8000";
 const USERS_API = `${API_URL}/api/users`;
 
 const COLORS = {
@@ -73,7 +75,6 @@ const personalInfoFields = [
   },
 ];
 
-// NEW: fallback used only until the real profile loads / for fields the backend doesn't store
 const DEFAULT_PROFILE = {
   doctorName: "Doctor",
   email: "",
@@ -83,16 +84,15 @@ const DEFAULT_PROFILE = {
   phone: "",
   location: "",
   bio: "",
-  image: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
+  image: null,
 };
 
 export default function DoctorProfileScreen({ navigation }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true); // NEW
+  const [isLoading, setIsLoading] = useState(true);
   const [originalProfile, setOriginalProfile] = useState(null);
-  const [userId, setUserId] = useState(null); // NEW: backend _id for PUT requests
-
+  const [userId, setUserId] = useState(null);
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -100,7 +100,7 @@ export default function DoctorProfileScreen({ navigation }) {
   const slideAnim = useRef(new Animated.Value(50)).current;
 
   useEffect(() => {
-    Animated.parallel([
+    const animation = Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 450,
@@ -119,48 +119,205 @@ export default function DoctorProfileScreen({ navigation }) {
         duration: 500,
         useNativeDriver: true,
       }),
-    ]).start();
-  }, []);
+    ]);
 
-  useEffect(() => {
-    (async () => {
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    })();
-  }, []);
+    animation.start();
 
-  // NEW: Load the real logged-in doctor from AsyncStorage (saved by LoginScreen)
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem("user");
-        if (stored) {
-          const user = JSON.parse(stored);
-          setUserId(user._id || user.id || null);
-          setProfile((prev) => ({
-            ...prev,
-            doctorName: user.name || user.username || prev.doctorName,
-            email: user.email || prev.email,
-            specialization: user.specialization || prev.specialization,
-            experience: user.experience || prev.experience,
-            // clinic, phone, location, bio, image aren't in the backend schema yet —
-            // kept from defaults / local edits only, for now
-            image: user.profileImage || prev.image,
-          }));
-        }
-      } catch (err) {
-        console.log("Could not load profile:", err);
-      } finally {
-        setIsLoading(false);
+    return () => animation.stop();
+  }, [fadeAnim, scaleAnim, slideAnim]);
+
+  // ============================================================
+  // LOAD PROFILE
+  // ============================================================
+
+  const loadProfile = useCallback(async () => {
+    setIsLoading(true);
+
+    try {
+      const stored = await AsyncStorage.getItem("user");
+      const token = await AsyncStorage.getItem("token");
+
+      if (!stored) {
+        console.warn("No logged-in user found in AsyncStorage.");
+        return;
       }
-    })();
+
+      const localUser = JSON.parse(stored);
+      const uId = localUser._id || localUser.id || null;
+
+      setUserId(uId);
+
+      setProfile((prev) => ({
+        ...prev,
+        doctorName:
+          localUser.name ||
+          localUser.username ||
+          prev.doctorName,
+
+        email:
+          localUser.email ??
+          prev.email,
+
+        specialization:
+          localUser.specialization ??
+          prev.specialization,
+
+        experience:
+          localUser.experience ??
+          prev.experience,
+
+        clinic:
+          localUser.clinic ??
+          prev.clinic,
+
+        phone:
+          localUser.phone ??
+          prev.phone,
+
+        location:
+          localUser.location ??
+          prev.location,
+
+        bio:
+          localUser.bio ??
+          prev.bio,
+
+        image:
+          localUser.image ||
+          localUser.profileImage ||
+          prev.image,
+      }));
+
+      if (!uId) {
+        console.warn("User ID missing from cached user.");
+        return;
+      }
+
+      console.log("Loading doctor profile:", `${USERS_API}/${uId}`);
+
+      const res = await fetch(`${USERS_API}/${uId}`, {
+        headers: token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : {},
+      });
+
+      const responseText = await res.text();
+
+      let data = {};
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error(
+            `Server returned invalid JSON. HTTP ${res.status}`
+          );
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(
+          data.message ||
+          `Could not load profile. HTTP ${res.status}`
+        );
+      }
+
+      const dbUser = data.user || data;
+
+      if (!dbUser || !(dbUser._id || dbUser.id)) {
+        throw new Error("Invalid user data returned by server.");
+      }
+
+      const updatedProfile = {
+        doctorName:
+          dbUser.name ||
+          dbUser.username ||
+          localUser.name ||
+          localUser.username ||
+          "Doctor",
+
+        email:
+          dbUser.email ??
+          localUser.email ??
+          "",
+
+        specialization:
+          dbUser.specialization ??
+          localUser.specialization ??
+          "",
+
+        experience:
+          dbUser.experience ??
+          localUser.experience ??
+          "",
+
+        clinic:
+          dbUser.clinic ??
+          localUser.clinic ??
+          "PetCare Veterinary Clinic",
+
+        phone:
+          dbUser.phone ??
+          localUser.phone ??
+          "",
+
+        location:
+          dbUser.location ??
+          localUser.location ??
+          "",
+
+        bio:
+          dbUser.bio ??
+          localUser.bio ??
+          "",
+
+        image:
+          dbUser.image ||
+          dbUser.profileImage ||
+          localUser.image ||
+          localUser.profileImage ||
+          null,
+      };
+
+      setProfile(updatedProfile);
+
+      await AsyncStorage.setItem(
+        "user",
+        JSON.stringify({
+          ...localUser,
+          ...dbUser,
+        })
+      );
+    } catch (error) {
+      console.error(
+        "Could not load doctor profile:",
+        error?.message
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  useEffect(() => {
-    if (isEditing && !originalProfile) {
-      setOriginalProfile({ ...profile });
-    }
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [loadProfile])
+  );
 
-    if (!isEditing) {
+  // ============================================================
+  // EDIT STATE
+  // ============================================================
+
+  useEffect(() => {
+    if (isEditing) {
+      if (!originalProfile) {
+        setOriginalProfile({
+          ...profile,
+        });
+      }
+    } else {
       setOriginalProfile(null);
     }
   }, [isEditing]);
@@ -172,133 +329,423 @@ export default function DoctorProfileScreen({ navigation }) {
     }));
   };
 
+  // ============================================================
+  // PROFILE IMAGE
+  // ============================================================
+
   const pickImage = async () => {
-    if (!isEditing) return;
+    try {
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
+      if (permissionResult.status !== "granted") {
+        Alert.alert(
+          "Permission Needed",
+          "Please allow photo library access to select a profile image."
+        );
 
-    if (!result.canceled) {
+        return;
+      }
+
+      if (!isEditing) {
+        setIsEditing(true);
+      }
+
+      const result =
+        await ImagePicker.launchImageLibraryAsync({
+          // Expo SDK 57
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.5,
+          base64: true,
+        });
+
+      if (
+        result.canceled ||
+        !result.assets?.length
+      ) {
+        return;
+      }
+
+      const asset = result.assets[0];
+
+      const imageUri = asset.base64
+        ? `data:image/jpeg;base64,${asset.base64}`
+        : asset.uri;
+
       setProfile((prev) => ({
         ...prev,
-        image: result.assets[0].uri,
+        image: imageUri,
       }));
+    } catch (error) {
+      console.error(
+        "Profile image picker error:",
+        error?.message
+      );
+
+      Alert.alert(
+        "Image Error",
+        error?.message ||
+        "Could not select profile image."
+      );
     }
   };
 
-  // UPDATED: actually saves to the backend instead of a fake timeout
+  // ============================================================
+  // SAVE
+  // ============================================================
+
   const handleSave = async () => {
     if (!userId) {
-      Alert.alert("Error", "Could not identify your account. Please log in again.");
+      Alert.alert(
+        "Error",
+        "Could not identify your account. Please log in again."
+      );
+      return;
+    }
+
+    if (!profile.doctorName?.trim()) {
+      Alert.alert(
+        "Required",
+        "Please enter your full name."
+      );
+      return;
+    }
+
+    if (!profile.email?.trim()) {
+      Alert.alert(
+        "Required",
+        "Please enter your email address."
+      );
       return;
     }
 
     setIsSaving(true);
 
     try {
+      const token = await AsyncStorage.getItem("token");
+
       const payload = {
-        name: profile.doctorName,
-        email: profile.email,
-        specialization: profile.specialization,
-        experience: profile.experience,
-        // clinic, phone, location, bio, image are not yet supported by the backend schema
+        name: profile.doctorName.trim(),
+        email: profile.email.trim(),
+        specialization: profile.specialization?.trim() || "",
+        experience: profile.experience?.trim() || "",
+        clinic: profile.clinic?.trim() || "",
+        phone: profile.phone?.trim() || "",
+        location: profile.location?.trim() || "",
+        bio: profile.bio?.trim() || "",
+        image: profile.image,
+        profileImage: profile.image,
       };
 
-      const res = await fetch(`${USERS_API}/${userId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      console.log(
+        "Updating doctor profile:",
+        `${USERS_API}/${userId}`
+      );
 
-      const data = await res.json();
+      // Don't log payload because image may contain huge Base64.
+
+      const res = await fetch(
+        `${USERS_API}/${userId}`,
+        {
+          method: "PUT",
+
+          headers: {
+            "Content-Type": "application/json",
+            ...(token
+              ? {
+                  Authorization: `Bearer ${token}`,
+                }
+              : {}),
+          },
+
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const responseText = await res.text();
+
+      let data = {};
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error(
+            `Server returned invalid JSON. HTTP ${res.status}`
+          );
+        }
+      }
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to update profile");
+        console.error(
+          "Profile update HTTP status:",
+          res.status
+        );
+
+        console.error(
+          "Profile update response:",
+          responseText
+        );
+
+        throw new Error(
+          data.message ||
+          `Failed to update profile. HTTP ${res.status}`
+        );
       }
 
-      // Keep AsyncStorage in sync so DoctorHome etc. show the updated name too
-      const stored = await AsyncStorage.getItem("user");
-      if (stored) {
-        const user = JSON.parse(stored);
-        const updatedUser = { ...user, ...payload };
-        await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
-      }
+      const serverUser = data.user || data;
 
-      setIsSaving(false);
+      const stored =
+        await AsyncStorage.getItem("user");
+
+      const cachedUser = stored
+        ? JSON.parse(stored)
+        : {};
+
+      const updatedUser = {
+        ...cachedUser,
+        ...serverUser,
+
+        _id:
+          serverUser._id ||
+          cachedUser._id ||
+          userId,
+
+        name:
+          serverUser.name ||
+          payload.name,
+
+        email:
+          serverUser.email ||
+          payload.email,
+
+        image:
+          serverUser.image ||
+          payload.image,
+
+        profileImage:
+          serverUser.profileImage ||
+          serverUser.image ||
+          payload.image,
+
+        specialization:
+          serverUser.specialization ??
+          payload.specialization,
+
+        experience:
+          serverUser.experience ??
+          payload.experience,
+
+        clinic:
+          serverUser.clinic ??
+          payload.clinic,
+
+        phone:
+          serverUser.phone ??
+          payload.phone,
+
+        location:
+          serverUser.location ??
+          payload.location,
+
+        bio:
+          serverUser.bio ??
+          payload.bio,
+      };
+
+      await AsyncStorage.setItem(
+        "user",
+        JSON.stringify(updatedUser)
+      );
+
+      setProfile((prev) => ({
+        ...prev,
+        doctorName: updatedUser.name,
+        email: updatedUser.email,
+        specialization:
+          updatedUser.specialization || "",
+        experience:
+          updatedUser.experience || "",
+        clinic:
+          updatedUser.clinic || "",
+        phone:
+          updatedUser.phone || "",
+        location:
+          updatedUser.location || "",
+        bio:
+          updatedUser.bio || "",
+        image:
+          updatedUser.image ||
+          updatedUser.profileImage ||
+          null,
+      }));
+
+      setOriginalProfile(null);
       setIsEditing(false);
-      Alert.alert("Success", "Profile updated successfully!");
-    } catch (err) {
-      console.log("Profile update error:", err);
+
+      Alert.alert(
+        "Success",
+        "Profile updated successfully!"
+      );
+    } catch (error) {
+      console.error(
+        "Profile update error:",
+        error?.message
+      );
+
+      Alert.alert(
+        "Update Error",
+        error?.message ||
+        "Could not update profile. Check your connection."
+      );
+    } finally {
       setIsSaving(false);
-      Alert.alert("Error", err.message || "Could not update profile. Check your connection.");
     }
   };
+
+  // ============================================================
+  // CANCEL
+  // ============================================================
 
   const handleCancel = () => {
     if (originalProfile) {
-      setProfile(originalProfile);
+      setProfile({
+        ...originalProfile,
+      });
     }
 
+    setOriginalProfile(null);
     setIsEditing(false);
   };
 
-  // UPDATED: clears stored session on logout
+  // ============================================================
+  // LOGOUT
+  // ============================================================
+
   const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.multiRemove(["token", "user"]); // NEW
-          navigation.replace("SignIn");
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
         },
-      },
-    ]);
+        {
+          text: "Logout",
+          style: "destructive",
+
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                "token",
+                "user",
+              ]);
+
+              navigation.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: "SignIn",
+                  },
+                ],
+              });
+            } catch (error) {
+              console.error(
+                "Logout error:",
+                error?.message
+              );
+            }
+          },
+        },
+      ]
+    );
   };
+
+  // ============================================================
+  // UI
+  // ============================================================
 
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : undefined
+      }
     >
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         style={styles.container}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* HEADER */}
         <LinearGradient
-          colors={[COLORS.PRIMARY, COLORS.SECONDARY]}
+          colors={[
+            COLORS.PRIMARY,
+            COLORS.SECONDARY,
+          ]}
           style={styles.headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+          start={{
+            x: 0,
+            y: 0,
+          }}
+          end={{
+            x: 1,
+            y: 0,
+          }}
         >
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => navigation.goBack()}
+              onPress={() =>
+                navigation.goBack()
+              }
             >
-              <Ionicons name="arrow-back" size={20} color="#fff" />
+              <Ionicons
+                name="arrow-back"
+                size={20}
+                color="#fff"
+              />
             </TouchableOpacity>
 
-            <Text style={styles.headerTitle}>Doctor Profile</Text>
+            <Text style={styles.headerTitle}>
+              Doctor Profile
+            </Text>
 
-            <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
+            <TouchableOpacity
+              onPress={() => {
+                if (isEditing) {
+                  handleCancel();
+                } else {
+                  setOriginalProfile({
+                    ...profile,
+                  });
+                  setIsEditing(true);
+                }
+              }}
+            >
               <LinearGradient
-                colors={[COLORS.PRIMARY, COLORS.SECONDARY]}
+                colors={[
+                  COLORS.PRIMARY,
+                  COLORS.SECONDARY,
+                ]}
                 style={styles.editBtn}
               >
                 <Ionicons
-                  name="create-outline"
+                  name={
+                    isEditing
+                      ? "close"
+                      : "create-outline"
+                  }
                   size={20}
                   color="#fff"
                 />
@@ -308,7 +755,9 @@ export default function DoctorProfileScreen({ navigation }) {
 
           {isEditing && (
             <View style={styles.editingBadge}>
-              <Text style={styles.editingText}>Editing Profile</Text>
+              <Text style={styles.editingText}>
+                Editing Profile
+              </Text>
             </View>
           )}
         </LinearGradient>
@@ -319,79 +768,128 @@ export default function DoctorProfileScreen({ navigation }) {
             {
               opacity: fadeAnim,
               transform: [
-                { scale: scaleAnim },
-                { translateY: slideAnim },
+                {
+                  scale: scaleAnim,
+                },
+                {
+                  translateY: slideAnim,
+                },
               ],
             },
           ]}
         >
-          {/* PROFILE CARD */}
+          {/* PROFILE */}
+
           <View style={styles.profileCard}>
-            <TouchableOpacity
-              onPress={pickImage}
-              activeOpacity={0.8}
-              disabled={!isEditing}
-            >
-              <View style={styles.avatarWrapper}>
-                <Image
-                  source={{ uri: profile.image }}
-                  style={styles.avatar}
-                />
-              </View>
-
-              {isEditing && (
-                <View style={styles.cameraIcon}>
-                  <Ionicons name="camera" size={18} color="#fff" />
-                </View>
-              )}
-            </TouchableOpacity>
-
-            <Text style={styles.name}>
-              {isLoading ? "Loading..." : profile.doctorName}
-            </Text>
-
-            <View style={styles.badge}>
-              <MaterialCommunityIcons
-                name="shield-check"
-                size={14}
-                color="#fff"
+            {isLoading ? (
+              <ActivityIndicator
+                size="large"
+                color={COLORS.SECONDARY}
+                style={{
+                  marginVertical: 35,
+                }}
               />
+            ) : (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (isEditing) {
+                      pickImage();
+                    }
+                  }}
+                  activeOpacity={
+                    isEditing ? 0.8 : 1
+                  }
+                >
+                  <View style={styles.avatarWrapper}>
+                    <Image
+                      source={
+                        profile.image
+                          ? {
+                              uri:
+                                profile.image,
+                            }
+                          : require(
+                              "../../../assets/images/doctor.jpg"
+                            )
+                      }
+                      style={styles.avatar}
+                    />
+                  </View>
 
-              <Text style={styles.badgeText}>Verified Doctor</Text>
-            </View>
+                  {isEditing && (
+                    <View style={styles.cameraIcon}>
+                      <Ionicons
+                        name="camera"
+                        size={18}
+                        color="#fff"
+                      />
+                    </View>
+                  )}
+                </TouchableOpacity>
 
-            <View style={styles.statusRow}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>
-                Available for Consultation
-              </Text>
-            </View>
-
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>150+</Text>
-                <Text style={styles.statLabel}>Patients</Text>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>98%</Text>
-                <Text style={styles.statLabel}>Satisfaction</Text>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {profile.experience || "—"}
+                <Text style={styles.name}>
+                  {profile.doctorName}
                 </Text>
-                <Text style={styles.statLabel}>Experience</Text>
-              </View>
-            </View>
+
+                <View style={styles.badge}>
+                  <MaterialCommunityIcons
+                    name="shield-check"
+                    size={14}
+                    color="#fff"
+                  />
+
+                  <Text style={styles.badgeText}>
+                    Verified Doctor
+                  </Text>
+                </View>
+
+                <View style={styles.statusRow}>
+                  <View style={styles.onlineDot} />
+
+                  <Text style={styles.onlineText}>
+                    Available for Consultation
+                  </Text>
+                </View>
+
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>
+                      150+
+                    </Text>
+                    <Text style={styles.statLabel}>
+                      Patients
+                    </Text>
+                  </View>
+
+                  <View style={styles.statDivider} />
+
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>
+                      98%
+                    </Text>
+                    <Text style={styles.statLabel}>
+                      Satisfaction
+                    </Text>
+                  </View>
+
+                  <View style={styles.statDivider} />
+
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>
+                      {profile.experience || "—"}
+                    </Text>
+                    <Text style={styles.statLabel}>
+                      Experience
+                    </Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
 
           {/* PERSONAL INFO */}
+
           <Animated.View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons
@@ -406,7 +904,10 @@ export default function DoctorProfileScreen({ navigation }) {
             </View>
 
             {personalInfoFields.map((field) => (
-              <View key={field.key} style={styles.inputContainer}>
+              <View
+                key={field.key}
+                style={styles.inputContainer}
+              >
                 <View style={styles.inputIcon}>
                   <Ionicons
                     name={field.icon}
@@ -419,25 +920,41 @@ export default function DoctorProfileScreen({ navigation }) {
                   style={[
                     styles.input,
                     {
-                      borderBottomColor: isEditing
-                        ? COLORS.SECONDARY
-                        : COLORS.BORDER,
+                      borderBottomColor:
+                        isEditing
+                          ? COLORS.SECONDARY
+                          : COLORS.BORDER,
                     },
                   ]}
                   editable={isEditing}
-                  value={profile[field.key]}
+                  value={
+                    profile[field.key] || ""
+                  }
                   onChangeText={(text) =>
-                    handleChange(field.key, text)
+                    handleChange(
+                      field.key,
+                      text
+                    )
                   }
                   placeholder={field.label}
-                  placeholderTextColor={COLORS.TEXT_LIGHT}
-                  keyboardType={field.keyboardType}
+                  placeholderTextColor={
+                    COLORS.TEXT_LIGHT
+                  }
+                  keyboardType={
+                    field.keyboardType
+                  }
+                  autoCapitalize={
+                    field.key === "email"
+                      ? "none"
+                      : "sentences"
+                  }
                 />
               </View>
             ))}
           </Animated.View>
 
-          {/* PROFESSIONAL INFO */}
+          {/* PROFESSIONAL */}
+
           <Animated.View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons
@@ -452,7 +969,10 @@ export default function DoctorProfileScreen({ navigation }) {
             </View>
 
             {professionalInfoItems.map((item) => (
-              <View key={item.key} style={styles.professionalField}>
+              <View
+                key={item.key}
+                style={styles.professionalField}
+              >
                 <MaterialCommunityIcons
                   name={item.icon}
                   size={20}
@@ -462,14 +982,23 @@ export default function DoctorProfileScreen({ navigation }) {
                 {isEditing ? (
                   <TextInput
                     style={styles.professionalInput}
-                    value={profile[item.key]}
+                    value={
+                      profile[item.key] || ""
+                    }
+                    placeholder={item.label}
+                    placeholderTextColor={
+                      COLORS.TEXT_LIGHT
+                    }
                     onChangeText={(text) =>
-                      handleChange(item.key, text)
+                      handleChange(
+                        item.key,
+                        text
+                      )
                     }
                   />
                 ) : (
                   <Text style={styles.professionalText}>
-                    {profile[item.key]}
+                    {profile[item.key] || "Not provided"}
                   </Text>
                 )}
               </View>
@@ -477,6 +1006,7 @@ export default function DoctorProfileScreen({ navigation }) {
           </Animated.View>
 
           {/* BIO */}
+
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
               <Ionicons
@@ -485,26 +1015,37 @@ export default function DoctorProfileScreen({ navigation }) {
                 color={COLORS.PRIMARY}
               />
 
-              <Text style={styles.sectionTitle}>Bio</Text>
+              <Text style={styles.sectionTitle}>
+                Bio
+              </Text>
             </View>
 
             {isEditing ? (
               <TextInput
                 style={styles.bioInput}
-                value={profile.bio}
+                value={profile.bio || ""}
                 onChangeText={(text) =>
-                  handleChange("bio", text)
+                  handleChange(
+                    "bio",
+                    text
+                  )
                 }
                 multiline
                 placeholder="Write something..."
-                placeholderTextColor={COLORS.TEXT_LIGHT}
+                placeholderTextColor={
+                  COLORS.TEXT_LIGHT
+                }
               />
             ) : (
-              <Text style={styles.bioText}>{profile.bio}</Text>
+              <Text style={styles.bioText}>
+                {profile.bio ||
+                  "No bio added yet."}
+              </Text>
             )}
           </View>
 
           {/* LOGOUT */}
+
           <TouchableOpacity
             style={styles.logoutBtn}
             onPress={handleLogout}
@@ -515,34 +1056,52 @@ export default function DoctorProfileScreen({ navigation }) {
               color={COLORS.ERROR}
             />
 
-            <Text style={styles.logoutText}>Logout</Text>
+            <Text style={styles.logoutText}>
+              Logout
+            </Text>
           </TouchableOpacity>
 
-          <View style={{ height: 120 }} />
+          <View
+            style={{
+              height: 120,
+            }}
+          />
         </Animated.View>
       </ScrollView>
 
-      {/* FLOATING SAVE BAR */}
+      {/* SAVE BAR */}
+
       {isEditing && (
         <View style={styles.floatingBar}>
           <TouchableOpacity
             style={styles.cancelBtn}
             onPress={handleCancel}
+            disabled={isSaving}
           >
-            <Text style={styles.cancelBtnText}>Cancel</Text>
+            <Text style={styles.cancelBtnText}>
+              Cancel
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={{ flex: 1 }}
+            style={{
+              flex: 1,
+            }}
             onPress={handleSave}
             disabled={isSaving}
           >
             <LinearGradient
-              colors={[COLORS.PRIMARY, COLORS.SECONDARY]}
+              colors={[
+                COLORS.PRIMARY,
+                COLORS.SECONDARY,
+              ]}
               style={styles.saveBtn}
             >
               {isSaving ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator
+                  size="small"
+                  color="#fff"
+                />
               ) : (
                 <Text style={styles.saveBtnText}>
                   Save Changes
@@ -570,7 +1129,10 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 28,
 
     shadowColor: "#4B0082",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 8,
@@ -586,7 +1148,8 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor:
+      "rgba(255,255,255,0.18)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -632,7 +1195,10 @@ const styles = StyleSheet.create({
     elevation: 6,
 
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.06,
     shadowRadius: 10,
   },
@@ -745,7 +1311,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
 
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 3,
@@ -840,18 +1409,22 @@ const styles = StyleSheet.create({
 
   floatingBar: {
     position: "absolute",
-    bottom: 20,
+    bottom: 90,
     left: 20,
     right: 20,
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.96)",
+    backgroundColor: "#FFFFFF",
     padding: 12,
     borderRadius: 22,
-    elevation: 10,
+    elevation: 12,
+    zIndex: 999,
 
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    shadowOpacity: 0.2,
     shadowRadius: 10,
   },
 

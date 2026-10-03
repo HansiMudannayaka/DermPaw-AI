@@ -1,8 +1,8 @@
 /* =========================
-   PURPLE THEME CHAT SCREEN
+   PURPLE THEME PET OWNER CHAT
 ========================= */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,53 +11,199 @@ import {
   Image,
   FlatList,
   TextInput,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
+  Alert,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import { getMessages, sendMessage, getDoctorStatus } from "../services/chatApi";
 
 const PRIMARY = "#3A0070";
 const BG = "#F4F5FA";
 
-const messages = [
-  {
-    id: "1",
-    text: "Hi Doctor, my dog has skin redness.",
-    sender: "me",
-    time: "10:00",
-  },
-  {
-    id: "2",
-    text: "Please send a clear image.",
-    sender: "doctor",
-    time: "10:02",
-  },
-  {
-    id: "3",
-    text: "Here is the image doctor.",
-    sender: "me",
-    time: "10:05",
-  },
-  {
-    id: "4",
-    text: "Looks like allergy symptoms.",
-    sender: "doctor",
-    time: "10:08",
-  },
-];
+export default function PetOwnerChatScreen({ navigation, route }) {
+  const {
+    doctorId,
+    doctorName,
+    doctorImage,
+    phone,
+    consultationId,
+    consultation,
+  } = route?.params || {};
 
-export default function ChatScreen({ navigation }) {
-  const [message, setMessage] = useState("");
+  const [inputText, setInputText] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [isDoctorAvailable, setIsDoctorAvailable] = useState(true);
+
+  const flatListRef = useRef(null);
+
+  const effectiveConsultationId = consultationId || consultation?._id || null;
+  const effectiveDoctorId =
+    doctorId ||
+    consultation?.doctor?._id ||
+    consultation?.doctor?.id ||
+    consultation?.doctor;
+  const effectiveDoctorName =
+    doctorName ||
+    consultation?.doctor?.name ||
+    consultation?.doctor?.username ||
+    "Dr. Veterinarian";
+  const effectiveDoctorImage =
+    doctorImage ||
+    consultation?.doctor?.image ||
+    consultation?.doctor?.profileImage ||
+    "https://images.unsplash.com/photo-1559839734-2b71ea197ec2";
+  const effectivePhone = phone || consultation?.doctor?.phone || null;
+
+  const convId = effectiveDoctorId
+    ? `direct_${effectiveDoctorId}`
+    : effectiveConsultationId
+    ? `consultation_${effectiveConsultationId}`
+    : null;
+
+  // Load current user from AsyncStorage
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const u = await AsyncStorage.getItem("user");
+        if (u) {
+          const parsed = JSON.parse(u);
+          setCurrentUserId(parsed._id || parsed.id);
+        }
+      } catch (err) {
+        console.log("Error loading user:", err);
+      }
+    }
+    loadUser();
+  }, []);
+
+  // Check live availability status of doctor from backend
+  const checkDoctorAvailability = useCallback(async () => {
+    if (!effectiveDoctorId) return;
+    try {
+      const res = await getDoctorStatus(effectiveDoctorId);
+      if (res && res.success !== undefined) {
+        setIsDoctorAvailable(Boolean(res.available));
+      }
+    } catch (err) {
+      console.log("Doctor availability check error:", err);
+    }
+  }, [effectiveDoctorId]);
+
+  // Fetch messages from backend
+  const fetchChatMessages = useCallback(async (isInitial = false) => {
+    if (!convId && !effectiveConsultationId) {
+      if (isInitial) setLoading(false);
+      return;
+    }
+
+    try {
+      const targetId = convId || effectiveConsultationId;
+      const res = await getMessages(targetId);
+      if (res.success && Array.isArray(res.messages)) {
+        setMessages(res.messages);
+      }
+    } catch (err) {
+      console.log("Fetch owner messages error:", err.message);
+    } finally {
+      if (isInitial) setLoading(false);
+    }
+  }, [convId, effectiveConsultationId]);
+
+  // Reload messages on screen focus + Polling for real-time sync & availability
+  useFocusEffect(
+    useCallback(() => {
+      fetchChatMessages(true);
+      checkDoctorAvailability();
+
+      const interval = setInterval(() => {
+        fetchChatMessages(false);
+        checkDoctorAvailability();
+      }, 3500);
+
+      return () => clearInterval(interval);
+    }, [fetchChatMessages, checkDoctorAvailability])
+  );
+
+  // Send message
+  const handleSend = async () => {
+    const trimmed = inputText.trim();
+    if (!trimmed || sending || !isDoctorAvailable) return;
+
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMsg = {
+      _id: tempId,
+      text: trimmed,
+      senderRole: "owner",
+      sender: { _id: currentUserId, role: "owner" },
+      createdAt: new Date().toISOString(),
+      pending: true,
+    };
+
+    // Optimistic UI update
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setInputText("");
+    setSending(true);
+
+    try {
+      const res = await sendMessage({
+        recipientId: effectiveDoctorId,
+        consultationId: effectiveConsultationId || undefined,
+        text: trimmed,
+      });
+
+      if (res.success && res.message) {
+        setMessages((prev) =>
+          prev.map((m) => (m._id === tempId ? res.message : m))
+        );
+      }
+    } catch (err) {
+      console.log("Send message error:", err);
+      Alert.alert(
+        "Notice",
+        err.message || "Could not send message. Doctor may be unavailable."
+      );
+      // Rollback
+      setMessages((prev) => prev.filter((m) => m._id !== tempId));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCall = () => {
+    if (!isDoctorAvailable) {
+      Alert.alert("Notice", "This veterinarian is currently unavailable.");
+      return;
+    }
+    if (effectivePhone) {
+      Linking.openURL(`tel:${effectivePhone}`);
+    } else {
+      Alert.alert("Contact", "Doctor phone number is not available.");
+    }
+  };
 
   const renderItem = ({ item }) => {
-    const isMe = item.sender === "me";
+    const isMe =
+      item.senderRole === "owner" ||
+      (currentUserId && item.sender && (item.sender._id === currentUserId || item.sender === currentUserId));
+
+    const timeStr = item.createdAt
+      ? new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : (item.time || "");
 
     return (
       <View
         style={[
           styles.messageContainer,
           {
-            alignSelf: isMe
-              ? "flex-end"
-              : "flex-start",
+            alignSelf: isMe ? "flex-end" : "flex-start",
           },
         ]}
       >
@@ -65,9 +211,9 @@ export default function ChatScreen({ navigation }) {
           style={[
             styles.messageBubble,
             {
-              backgroundColor: isMe
-                ? PRIMARY
-                : "#fff",
+              backgroundColor: isMe ? PRIMARY : "#fff",
+              borderBottomRightRadius: isMe ? 0 : 20,
+              borderBottomLeftRadius: isMe ? 20 : 0,
             },
           ]}
         >
@@ -83,112 +229,151 @@ export default function ChatScreen({ navigation }) {
         </View>
 
         <Text style={styles.time}>
-          {item.time}
+          {timeStr}
+          {item.pending ? " • Sending..." : ""}
         </Text>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+    >
       {/* HEADER */}
       <View style={styles.header}>
-        {/* ROUNDED BACK BUTTON */}
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons
-            name="arrow-back"
-            size={20}
-            color="#111"
-          />
+          <Ionicons name="arrow-back" size={20} color="#111" />
         </TouchableOpacity>
 
-        {/* PROFILE */}
         <View style={styles.profileRow}>
           <Image
             source={{
-              uri: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2",
+              uri: effectiveDoctorImage,
             }}
             style={styles.avatar}
           />
 
-          <View>
-            <Text style={styles.name}>
-              Dr. Sarah
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={1}>
+              {effectiveDoctorName}
             </Text>
 
-            <Text style={styles.online}>
-              Online
-            </Text>
+            {/* LIVE AVAILABILITY STATUS */}
+            <View style={styles.statusRow}>
+              <View
+                style={[
+                  styles.statusDot,
+                  { backgroundColor: isDoctorAvailable ? "#00B761" : "#EF4444" },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.statusText,
+                  { color: isDoctorAvailable ? "#00B761" : "#EF4444" },
+                ]}
+              >
+                {isDoctorAvailable ? "Available" : "Unavailable"}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* RIGHT ICONS */}
         <View style={styles.rightIcons}>
-          <TouchableOpacity style={styles.iconBtn}>
-            <Ionicons
-              name="call-outline"
-              size={20}
-              color={PRIMARY}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.iconBtn,
-              { marginLeft: 10 },
-            ]}
-          >
-            <Ionicons
-              name="ellipsis-vertical"
-              size={18}
-              color="#555"
-            />
+          <TouchableOpacity style={styles.iconBtn} onPress={handleCall}>
+            <Ionicons name="call-outline" size={20} color={PRIMARY} />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* UNAVAILABLE BANNER */}
+      {!isDoctorAvailable && (
+        <View style={styles.unavailableBanner}>
+          <Ionicons name="alert-circle" size={16} color="#DC2626" />
+          <Text style={styles.unavailableBannerText}>
+            This veterinarian is currently unavailable or removed by admin.
+          </Text>
+        </View>
+      )}
+
       {/* CHAT LIST */}
-      <FlatList
-        data={messages}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{
-          padding: 15,
-          paddingBottom: 100,
-        }}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={styles.chatArea}>
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color={PRIMARY} />
+            <Text style={styles.loadingText}>Loading conversation...</Text>
+          </View>
+        ) : messages.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <MaterialCommunityIcons
+              name="chat-outline"
+              size={56}
+              color="#ccc"
+            />
+            <Text style={styles.emptyTitle}>Start conversation</Text>
+            <Text style={styles.emptySub}>
+              Ask questions about your dog's skin condition or medication.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderItem}
+            keyExtractor={(item, index) => item._id?.toString() || item.id?.toString() || String(index)}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          />
+        )}
+      </View>
 
       {/* MESSAGE INPUT */}
       <View style={styles.inputContainer}>
-        <TouchableOpacity>
-          <Ionicons
-            name="attach"
-            size={24}
-            color={PRIMARY}
-          />
-        </TouchableOpacity>
-
         <TextInput
-          placeholder="Write a message..."
-          value={message}
-          onChangeText={setMessage}
-          style={styles.input}
+          placeholder={
+            isDoctorAvailable
+              ? "Write a message to doctor..."
+              : "Doctor is currently unavailable"
+          }
+          value={inputText}
+          onChangeText={setInputText}
+          style={[
+            styles.input,
+            !isDoctorAvailable && { backgroundColor: "#ECECF0" },
+          ]}
           placeholderTextColor="#999"
+          multiline
+          maxLength={1000}
+          editable={isDoctorAvailable}
         />
 
-        <TouchableOpacity style={styles.sendBtn}>
-          <Ionicons
-            name="send"
-            size={18}
-            color="#fff"
-          />
+        <TouchableOpacity
+          style={[
+            styles.sendBtn,
+            {
+              opacity:
+                inputText.trim().length > 0 && isDoctorAvailable ? 1 : 0.4,
+            },
+          ]}
+          onPress={handleSend}
+          disabled={!inputText.trim() || sending || !isDoctorAvailable}
+          activeOpacity={0.7}
+        >
+          {sending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="send" size={18} color="#fff" />
+          )}
         </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -202,7 +387,6 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
 
-  /* HEADER */
   header: {
     backgroundColor: "#fff",
     paddingTop: 50,
@@ -211,9 +395,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
 
-  /* ROUNDED BACK BUTTON */
   backBtn: {
     width: 42,
     height: 42,
@@ -221,10 +408,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#F4F5FA",
     justifyContent: "center",
     alignItems: "center",
-    elevation: 2,
   },
 
-  /* PROFILE */
   profileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -233,10 +418,11 @@ const styles = StyleSheet.create({
   },
 
   avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 10,
+    backgroundColor: "#E2D2F0",
   },
 
   name: {
@@ -245,13 +431,42 @@ const styles = StyleSheet.create({
     color: "#111",
   },
 
-  online: {
-    fontSize: 12,
-    color: "#00B761",
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 2,
+    gap: 5,
   },
 
-  /* RIGHT ICONS */
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+
+  statusText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  unavailableBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#FECACA",
+  },
+
+  unavailableBannerText: {
+    color: "#991B1B",
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+
   rightIcons: {
     flexDirection: "row",
     alignItems: "center",
@@ -266,7 +481,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  /* MESSAGE */
   messageContainer: {
     marginBottom: 15,
     maxWidth: "80%",
@@ -275,6 +489,11 @@ const styles = StyleSheet.create({
   messageBubble: {
     padding: 14,
     borderRadius: 18,
+    elevation: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
   },
 
   time: {
@@ -284,32 +503,44 @@ const styles = StyleSheet.create({
     marginLeft: 5,
   },
 
-  /* INPUT */
+  chatArea: {
+    flex: 1,
+  },
+
+  listContent: {
+    padding: 15,
+    paddingBottom: 15,
+  },
+
   inputContainer: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
     backgroundColor: "#fff",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 20 : 12,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     elevation: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
   },
 
   input: {
     flex: 1,
-    height: 48,
+    minHeight: 44,
+    maxHeight: 100,
     backgroundColor: "#F4F5FA",
     borderRadius: 18,
-    marginHorizontal: 12,
+    marginRight: 12,
     paddingHorizontal: 15,
+    paddingVertical: 8,
     color: "#111",
+    fontSize: 14,
   },
 
-  /* SEND BUTTON */
   sendBtn: {
     width: 46,
     height: 46,
@@ -317,6 +548,33 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 3,
+  },
+
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 30,
+  },
+
+  loadingText: {
+    marginTop: 12,
+    color: "#666",
+    fontSize: 14,
+  },
+
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginTop: 16,
+  },
+
+  emptySub: {
+    fontSize: 13,
+    color: "#777",
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
   },
 });

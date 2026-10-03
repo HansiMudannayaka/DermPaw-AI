@@ -18,56 +18,24 @@ const SECONDARY = "#8A2BE2";
 const BG = "#F6F1FF";
 const CARD = "#FFFFFF";
 
-/* ================= DUMMY DOCTOR DATA ================= */
-
-const doctors = [
-  {
-    id: 1,
-    doctorName: "Dr. Anjali Perera",
-    clinic: "PetCare Veterinary Clinic",
-    experience: "8 Years Experience",
-    specialization: "Dermatology Specialist",
-    phone: "0752875365",
-    location: "Negombo, Sri Lanka",
-    image:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?q=80&w=400",
-  },
-
-  {
-    id: 2,
-    doctorName: "Dr. Kasun Silva",
-    clinic: "Happy Paws Animal Hospital",
-    experience: "5 Years Experience",
-    specialization: "Pet Surgery Specialist",
-    phone: "0722222222",
-    location: "Colombo, Sri Lanka",
-    image:
-      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?q=80&w=400",
-  },
-
-  {
-    id: 3,
-    doctorName: "Dr. Nadeesha Fernando",
-    clinic: "CareVet Animal Center",
-    experience: "10 Years Experience",
-    specialization: "Cat Care Specialist",
-    phone: "0733333333",
-    location: "Kandy, Sri Lanka",
-    image:
-      "https://images.unsplash.com/photo-1594824475317-d6d0b8e1d6c8?q=80&w=400",
-  },
-];
-
 export default function DoctorProfileScreen({
   route,
   navigation,
 }) {
   /* ================= GET SELECTED DOCTOR ================= */
 
-  const doctorId = route?.params?.doctorId || 1;
+  const passedDoc = route?.params?.doctor;
 
-  const doctor =
-    doctors.find((item) => item.id === doctorId) || doctors[0];
+  const doctor = {
+    id: passedDoc?._id || passedDoc?.id || "doc-1",
+    doctorName: passedDoc?.name || passedDoc?.username || passedDoc?.doctorName || "Dr. Veterinarian",
+    clinic: passedDoc?.clinic || "PetCare Veterinary Clinic",
+    experience: passedDoc?.experience || "5 Years Experience",
+    specialization: passedDoc?.specialization || "Veterinary Specialist",
+    phone: passedDoc?.phone || "0770000000",
+    location: passedDoc?.location || "Colombo, Sri Lanka",
+    image: passedDoc?.image || passedDoc?.profileImage || null,
+  };
 
   /* ================= CALL ================= */
 
@@ -79,9 +47,12 @@ export default function DoctorProfileScreen({
 
   const handleChat = () => {
     navigation.navigate("PetOwnerChatScreen", {
+      doctorId: doctor.id,
       doctorName: doctor.doctorName,
       doctorImage: doctor.image,
       phone: doctor.phone,
+      consultationId: route?.params?.consultationId || route?.params?.consultation?._id,
+      consultation: route?.params?.consultation,
     });
   };
 
@@ -116,7 +87,11 @@ export default function DoctorProfileScreen({
       <View style={styles.profileCard}>
         <View style={styles.avatarWrapper}>
           <Image
-            source={{ uri: doctor.image }}
+            source={
+              doctor.image
+                ? { uri: doctor.image }
+                : require("../../../assets/images/doctor.jpg")
+            }
             style={styles.avatarImage}
           />
         </View>

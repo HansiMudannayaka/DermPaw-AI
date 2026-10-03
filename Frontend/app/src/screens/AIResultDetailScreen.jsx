@@ -14,11 +14,80 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 const { width } = Dimensions.get("window");
 const PRIMARY = "#4B0082";
 
-export default function AIResultScreen({ navigation }) {
+export default function AIResultScreen({ navigation, route }) {
+  const { consultation, item, reviewId, petName: passedPetName, diagnosis: passedDiagnosis, selectedTab } = route.params || {};
+
+  const activeConsultation = consultation || item?.original;
+  const isReviewed = Boolean(
+    route.params?.isReviewed ||
+    activeConsultation?.status === "approved" ||
+    activeConsultation?.status === "reviewed" ||
+    activeConsultation?.status === "completed" ||
+    activeConsultation?.advice ||
+    item?.status === "approved" ||
+    item?.status === "reviewed"
+  );
+
+  // Parse review details from advice
+  const rawAdvice = activeConsultation?.advice || "";
+  let doctorDiagnosis = "";
+  let doctorSeverity = "Severe";
+  let doctorRecommendations = [];
+  let doctorNotes = "";
+
+  if (rawAdvice) {
+    const diagMatch = rawAdvice.match(/Diagnosis:\s*(.*?)(?=\n|$)/i);
+    if (diagMatch && diagMatch[1]) doctorDiagnosis = diagMatch[1].trim();
+
+    const sevMatch = rawAdvice.match(/Severity:\s*(.*?)(?=\n|$)/i);
+    if (sevMatch && sevMatch[1]) doctorSeverity = sevMatch[1].trim();
+
+    const recMatch = rawAdvice.match(/Recommendations:\s*([\s\S]*?)(?=\nNotes:|$)/i);
+    if (recMatch && recMatch[1]) {
+      doctorRecommendations = recMatch[1].trim().split("\n").map(r => r.trim()).filter(Boolean);
+    }
+
+    const notesMatch = rawAdvice.match(/Notes:\s*([\s\S]*)/i);
+    if (notesMatch && notesMatch[1]) {
+      doctorNotes = notesMatch[1].trim();
+    } else if (!recMatch && !diagMatch) {
+      doctorNotes = rawAdvice.trim();
+    }
+  }
+
+  const petName = activeConsultation?.pet?.name || activeConsultation?.petName || item?.name || passedPetName || "My Dog";
+  const breed = activeConsultation?.pet?.description || activeConsultation?.petBreed || item?.breed || "Dog";
+  const ownerName = activeConsultation?.owner?.name || activeConsultation?.owner?.username || "Pet Owner";
+  const disease = activeConsultation?.aiResult?.disease || item?.issue || passedDiagnosis || "Skin Condition";
+  if (!doctorDiagnosis) doctorDiagnosis = disease;
+  const confidence = activeConsultation?.aiResult?.confidence ? `${activeConsultation.aiResult.confidence}%` : (item?.confidence || "92%");
+  const confidenceNum = parseInt(confidence, 10) || 85;
+  const severity = activeConsultation?.aiResult?.severity || selectedTab || item?.priority || (confidenceNum > 85 ? "High" : "Medium");
+  const affectedArea = activeConsultation?.aiResult?.affectedArea || "Skin Area";
+  const receivedTime = activeConsultation?.createdAt ? new Date(activeConsultation.createdAt).toLocaleString() : "Recently";
+
+  let petImage = require("../../../assets/images/dog1.png");
+  if (activeConsultation?.pet?.image && (activeConsultation.pet.image.startsWith("http") || activeConsultation.pet.image.startsWith("data:"))) {
+    petImage = { uri: activeConsultation.pet.image };
+  } else if (activeConsultation?.petImage && (activeConsultation.petImage.startsWith("http") || activeConsultation.petImage.startsWith("data:"))) {
+    petImage = { uri: activeConsultation.petImage };
+  } else if (item?.image && typeof item.image === "object") {
+    petImage = item.image;
+  }
+
+  let diseaseImage = { uri: "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e" };
+  const gradcamUri = activeConsultation?.aiResult?.gradcam_image || activeConsultation?.aiResult?.gradcamImage;
+  if (gradcamUri && (gradcamUri.startsWith("http") || gradcamUri.startsWith("data:"))) {
+    diseaseImage = { uri: gradcamUri };
+  } else if (activeConsultation?.petImage && (activeConsultation.petImage.startsWith("http") || activeConsultation.petImage.startsWith("data:"))) {
+    diseaseImage = { uri: activeConsultation.petImage };
+  }
+
   const resultData = {
-    petName: "Luna",
-    condition: "Hot Spot",
-    confidence: "92%",
+    petName,
+    condition: disease,
+    confidence,
+    consultation: activeConsultation,
   };
 
   return (
@@ -27,7 +96,6 @@ export default function AIResultScreen({ navigation }) {
 
       {/* HEADER */}
       <View style={styles.header}>
-
         {/* BACK BUTTON */}
         <TouchableOpacity
           style={styles.backBtn}
@@ -45,7 +113,6 @@ export default function AIResultScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-
         {/* PET INFO CARD → NAVIGATE TO PET PROFILE */}
         <TouchableOpacity
           activeOpacity={0.85}
@@ -53,29 +120,28 @@ export default function AIResultScreen({ navigation }) {
           onPress={() =>
             navigation.navigate("DoctorPetDetails", {
               pet: resultData,
+              consultation,
             })
           }
         >
           <Image
-            source={{
-              uri: "https://images.dog.ceo/breeds/retriever-golden/n02099601_3004.jpg",
-            }}
+            source={petImage}
             style={styles.petImage}
           />
 
           <View style={{ flex: 1 }}>
-            <Text style={styles.petName}>Luna</Text>
+            <Text style={styles.petName}>{petName}</Text>
 
             <Text style={styles.petDetails}>
-              Golden Retriever • 2Y • Female
+              {breed}
             </Text>
 
             <Text style={styles.owner}>
-              Owner: Priya Sharma
+              Owner: {ownerName}
             </Text>
 
             <Text style={styles.time}>
-              Received: 20 May 2024, 09:15 AM
+              Received: {receivedTime}
             </Text>
           </View>
 
@@ -88,56 +154,37 @@ export default function AIResultScreen({ navigation }) {
 
         {/* AI SUMMARY */}
         <View style={styles.card}>
-
           <Text style={styles.sectionTitle}>
             AI Analysis Summary
           </Text>
 
           <Image
-            source={{
-              uri: "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e",
-            }}
+            source={diseaseImage}
             style={styles.diseaseImage}
           />
 
           <Text style={styles.label}>AI Detection</Text>
 
           <Text style={styles.detection}>
-            Hot Spot (Acute Moist Dermatitis)
+            {disease}
           </Text>
 
           <View style={styles.rowBetween}>
             <Text style={styles.label}>Confidence Score</Text>
 
-            <Text style={styles.percent}>92%</Text>
+            <Text style={styles.percent}>{confidence}</Text>
           </View>
 
           <View style={styles.progressBar}>
             <View
               style={[
                 styles.progressFill,
-                { width: "92%" },
+                { width: `${confidenceNum}%` },
               ]}
             />
           </View>
 
-          <View style={styles.rowBetween}>
-            <Text style={styles.label}>Severity</Text>
 
-            <View style={styles.severityRow}>
-              <View style={styles.dot} />
-
-              <Text style={styles.severityText}>High</Text>
-            </View>
-          </View>
-
-          <View style={styles.rowBetween}>
-            <Text style={styles.label}>Affected Area</Text>
-
-            <Text style={styles.value}>
-              Left Shoulder
-            </Text>
-          </View>
 
           <View style={styles.alertBox}>
             <MaterialIcons
@@ -153,22 +200,90 @@ export default function AIResultScreen({ navigation }) {
           </View>
         </View>
 
-        <View style={{ height: 30 }} />
+        {/* DOCTOR EXPERT REVIEW (DISPLAY ONLY IF REVIEWED) */}
+        {isReviewed && (
+          <View style={styles.card}>
+            <View style={styles.reviewHeaderRow}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="checkmark-circle" size={22} color="#16A34A" />
+                <Text style={[styles.sectionTitle, { marginBottom: 0, marginLeft: 8 }]}>
+                  Your Expert Review
+                </Text>
+              </View>
+              <View style={styles.completedBadge}>
+                <Text style={styles.completedBadgeText}>Completed</Text>
+              </View>
+            </View>
 
-        {/* REVIEW BUTTON */}
-        <TouchableOpacity
-          style={styles.submitBtn}
-          activeOpacity={0.85}
-          onPress={() =>
-            navigation.navigate("AddReview", {
-              result: resultData,
-            })
-          }
-        >
-          <Text style={styles.submitText}>
-            Review & Add Opinion
-          </Text>
-        </TouchableOpacity>
+            <View style={styles.reviewDivider} />
+
+            {/* DIAGNOSIS */}
+            <View style={styles.reviewInfoRow}>
+              <Text style={styles.reviewLabel}>Diagnosis</Text>
+              <Text style={styles.reviewValue}>{doctorDiagnosis}</Text>
+            </View>
+
+            {/* SEVERITY */}
+            <View style={styles.reviewInfoRow}>
+              <Text style={styles.reviewLabel}>Severity</Text>
+              <View style={styles.severityTag}>
+                <Text style={styles.severityTagText}>{doctorSeverity}</Text>
+              </View>
+            </View>
+
+            {/* RECOMMENDATIONS */}
+            {doctorRecommendations.length > 0 && (
+              <View style={styles.reviewInfoCol}>
+                <Text style={styles.reviewLabel}>Recommendations</Text>
+                {doctorRecommendations.map((rec, index) => (
+                  <View key={index} style={styles.recRow}>
+                    <Ionicons name="checkmark-circle-outline" size={16} color="#16A34A" />
+                    <Text style={styles.recText}>{rec}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* CLINICAL NOTES */}
+            <View style={styles.reviewInfoCol}>
+              <Text style={styles.reviewLabel}>Clinical Notes</Text>
+              <View style={styles.noteBox}>
+                <Text style={styles.noteText}>
+                  {doctorNotes || "No notes provided."}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        <View style={{ height: 24 }} />
+
+        {/* IF REVIEWED: SHOW BACK BUTTON ONLY (NO ADD REVIEW BUTTON) */}
+        {isReviewed ? (
+          <TouchableOpacity
+            style={styles.backActionBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={18} color="#4B0082" />
+            <Text style={styles.backActionText}>Back to Review Requests</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.submitBtn}
+            activeOpacity={0.85}
+            onPress={() =>
+              navigation.navigate("AddReview", {
+                result: resultData,
+                consultation: activeConsultation,
+              })
+            }
+          >
+            <Text style={styles.submitText}>
+              Review & Add Opinion
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <View style={{ height: 60 }} />
       </ScrollView>
@@ -374,5 +489,116 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 16,
     letterSpacing: 0.4,
+  },
+
+  /* REVIEW CARD (VIEW ONLY) */
+  reviewHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  completedBadge: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
+  completedBadgeText: {
+    color: "#16A34A",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  reviewDivider: {
+    height: 1,
+    backgroundColor: "#F0F0F0",
+    marginBottom: 14,
+  },
+
+  reviewInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F7F7F7",
+  },
+
+  reviewInfoCol: {
+    marginTop: 12,
+  },
+
+  reviewLabel: {
+    fontSize: 13,
+    color: "#777",
+    fontWeight: "600",
+  },
+
+  reviewValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111",
+  },
+
+  severityTag: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+
+  severityTagText: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  recRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+    gap: 6,
+  },
+
+  recText: {
+    fontSize: 13,
+    color: "#333",
+    fontWeight: "500",
+  },
+
+  noteBox: {
+    backgroundColor: "#F8F9FD",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginTop: 8,
+  },
+
+  noteText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+
+  backActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EDE9FE",
+    paddingVertical: 15,
+    borderRadius: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+  },
+
+  backActionText: {
+    color: "#4B0082",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

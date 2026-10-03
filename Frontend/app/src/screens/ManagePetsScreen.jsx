@@ -16,6 +16,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BACKEND_URL } from "../services/api";
 
 const PRIMARY = "#4B0082";
 const SECONDARY = "#8A2BE2";
@@ -41,7 +42,7 @@ export default function ManagePetsScreen({ navigation }) {
   const fetchPets = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
-      const res = await fetch("http://172.20.10.4:8000/api/pets", {
+      const res = await fetch(`${BACKEND_URL}/api/pets`, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -49,6 +50,8 @@ export default function ManagePetsScreen({ navigation }) {
       const data = await res.json();
       if (data.success) {
         setPets(data.pets || []);
+      } else {
+        setPets([]);
       }
     } catch (error) {
       console.log("Error fetching pets in ManagePetsScreen:", error);
@@ -75,11 +78,16 @@ export default function ManagePetsScreen({ navigation }) {
     let result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 1,
+      quality: 0.6,
+      base64: true,
     });
 
-    if (!result.canceled) {
-      setNewPet({ ...newPet, image: result.assets[0].uri });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const imageUri = asset.base64
+        ? `data:image/jpeg;base64,${asset.base64}`
+        : asset.uri;
+      setNewPet({ ...newPet, image: imageUri });
     }
   };
 
@@ -123,11 +131,11 @@ export default function ManagePetsScreen({ navigation }) {
 
     try {
       const token = await AsyncStorage.getItem("token");
-      let url = "http://172.20.10.4:8000/api/pets";
+      let url = `${BACKEND_URL}/api/pets`;
       let method = "POST";
 
       if (isEditing) {
-        url = `http://172.20.10.4:8000/api/pets/${editingPetId}`;
+        url = `${BACKEND_URL}/api/pets/${editingPetId}`;
         method = "PUT";
       }
 
@@ -171,7 +179,7 @@ export default function ManagePetsScreen({ navigation }) {
         onPress: async () => {
           try {
             const token = await AsyncStorage.getItem("token");
-            const res = await fetch(`http://172.20.10.4:8000/api/pets/${petId}`, {
+            const res = await fetch(`${BACKEND_URL}/api/pets/${petId}`, {
               method: "DELETE",
               headers: {
                 "Authorization": `Bearer ${token}`

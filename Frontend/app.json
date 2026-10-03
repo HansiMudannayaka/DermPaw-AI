@@ -4,31 +4,30 @@
     "slug": "DermPawAI",
     "version": "1.0.0",
     "orientation": "portrait",
-    
     "scheme": "dermpawai",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
-       
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.DermPawAI"
+      "package": "com.anonymous.DermPawAI",
+      "softwareKeyboardLayoutMode": "resize"
     },
+
     "web": {
-      "output": "static"
-      
+      "output": "single"
     },
+
     "plugins": [
       [
         "expo-splash-screen",
         {
-         
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -38,11 +37,9 @@
         }
       ],
       "expo-font",
-      "expo-router",
-      "expo-web-browser"
-    ],
-    "experiments": {
-      "typedRoutes": true
-    }
+      "expo-web-browser",
+      "expo-image",
+      "expo-status-bar"
+    ]
   }
 }
